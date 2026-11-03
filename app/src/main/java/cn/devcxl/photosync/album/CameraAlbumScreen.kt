@@ -95,7 +95,12 @@ internal class CameraAlbumScreen(
             else -> R.string.gallery_waiting
         })
         if (connected && !wasConnected) loadIndex()
-        if (!connected) { indexJob?.cancel(); binding.galleryIndexProgress.visibility = View.GONE }
+        if (!connected) {
+            indexJob?.cancel()
+            preview?.close()
+            preview = null
+            binding.galleryIndexProgress.visibility = View.GONE
+        }
         updateSelection()
     }
 
@@ -111,6 +116,10 @@ internal class CameraAlbumScreen(
         indexJob = scope.launch {
             try {
                 photos = AlbumIndexLoader(activity, controller).load(force) { entries, scanned, total, complete ->
+                    if (photos.firstOrNull()?.cacheToken != entries.firstOrNull()?.cacheToken) {
+                        imported.clear()
+                        if (entries.isEmpty()) { date = null; collapsedDays.clear() }
+                    }
                     photos = entries
                     binding.galleryIndexStatus.text = if (complete) summary() else
                         activity.getString(R.string.gallery_index_progress, scanned, total)
@@ -173,9 +182,10 @@ internal class CameraAlbumScreen(
 
     private fun open(members: List<CameraPhoto>) {
         if (importing) return
-        val list = if (members.size > 1) members else sortPhotos(photos.filter { date == null || it.day == date }, sort)
-        val initial = list.indexOfFirst { it.handle == members.first().handle }.coerceAtLeast(0)
-        preview = AlbumPreviewDialog(activity, list, initial, members.size > 1, thumbnails, transfers,
+        val sequence = buildPreviewSequence(photos, sort, date, members.first().handle, mergeBursts)
+        Timber.tag("USB_COMPAT").i("GALLERY_PREVIEW_SEQUENCE total=%d initial=%d stackMembers=%d",
+            sequence.photos.size, sequence.initialIndex + 1, members.size)
+        preview = AlbumPreviewDialog(activity, sequence.photos, sequence.initialIndex, sequence.bursts, thumbnails, transfers,
             { it in selected }, { toggle(listOf(it)) }).also { it.show() }
     }
 

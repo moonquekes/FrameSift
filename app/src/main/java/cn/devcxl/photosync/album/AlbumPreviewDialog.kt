@@ -30,14 +30,19 @@ internal class AlbumPreviewDialog(
     private val activity: ComponentActivity,
     private val photos: List<CameraPhoto>,
     initialIndex: Int,
-    private val isBurst: Boolean,
+    private val bursts: Map<Int, BurstPosition>,
     private val thumbnails: AlbumThumbnails,
     private val transfers: AlbumTransfers,
     private val selected: (Int) -> Boolean,
     private val toggle: (CameraPhoto) -> Unit
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val dialog = Dialog(activity, R.style.Theme_PhotoSync)
+    private val dialog = object : Dialog(activity, R.style.Theme_PhotoSync) {
+        override fun onWindowFocusChanged(hasFocus: Boolean) {
+            super.onWindowFocusChanged(hasFocus)
+            if (hasFocus) window?.let(AlbumSystemBars::show)
+        }
+    }
     private val root = activity.layoutInflater.inflate(R.layout.dialog_gallery_preview, null)
     private val original: SubsamplingScaleImageView = root.findViewById(R.id.previewOriginal)
     private val quick: ImageView = root.findViewById(R.id.previewQuick)
@@ -78,6 +83,7 @@ internal class AlbumPreviewDialog(
         dialog.setOnDismissListener { scope.cancel(); original.recycle(); transfers.clearPins() }
         dialog.show()
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        dialog.window?.let(AlbumSystemBars::show)
         render()
     }
 
@@ -114,9 +120,10 @@ internal class AlbumPreviewDialog(
         quick.setImageBitmap(thumbnails.cached(photo))
         loading.visibility = View.VISIBLE
         loading.text = activity.getString(R.string.gallery_preview_loading, 0)
-        root.findViewById<TextView>(R.id.previewPosition).text = activity.getString(
-            if (isBurst) R.string.gallery_preview_burst else R.string.gallery_preview_position, index + 1, photos.size
-        )
+        val burst = bursts[photo.handle]
+        root.findViewById<TextView>(R.id.previewPosition).text = if (burst == null)
+            activity.getString(R.string.gallery_preview_position, index + 1, photos.size)
+        else activity.getString(R.string.gallery_preview_burst, index + 1, photos.size, burst.index, burst.count)
         root.findViewById<View>(R.id.previewPrevious).alpha = if (index > 0) 1f else 0.25f
         root.findViewById<View>(R.id.previewNext).alpha = if (index < photos.lastIndex) 1f else 0.25f
         renderSelection()

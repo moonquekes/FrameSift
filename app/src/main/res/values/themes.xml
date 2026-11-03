@@ -6,6 +6,7 @@
         <item name="android:statusBarColor">@color/gallery_background</item>
         <item name="android:navigationBarColor">@color/gallery_background</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowFullscreen">false</item>
         <item name="android:fontFamily">sans</item>
     </style>
 </resources>

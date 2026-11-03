@@ -33,7 +33,6 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -49,6 +48,7 @@ import timber.log.Timber
 
 import cn.devcxl.photosync.App
 import cn.devcxl.photosync.album.CameraAlbumScreen
+import cn.devcxl.photosync.album.AlbumSystemBars
 import cn.devcxl.photosync.R
 import cn.devcxl.photosync.adapter.JpegSourceInfo
 import cn.devcxl.photosync.adapter.PhotoPagerAdapter
@@ -114,10 +114,7 @@ class MainActivity : ComponentActivity() {
         observeConnectionState()
         setupButtons()
         enableEdgeToEdge()
-        WindowCompat.getInsetsController(window, binding.root).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
+        AlbumSystemBars.show(window)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -133,6 +130,11 @@ class MainActivity : ComponentActivity() {
             if (albumScreen?.handleBack() != true) finish()
         }
         connectMTPDevice()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) AlbumSystemBars.show(window)
     }
 
     private fun setupDao() {

@@ -6,7 +6,8 @@ import java.util.Locale
 
 /** Camera-side JPEG metadata, retaining the camera's own local capture date. */
 internal data class CameraPhoto(
-    val handle: Int, val name: String, val bytes: Long, val captureDate: String, val storageId: Int = 0
+    val handle: Int, val name: String, val bytes: Long, val captureDate: String, val storageId: Int = 0,
+    val cacheToken: String = ""
 ) {
     val timestamp: Long = runCatching {
         SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT).apply { isLenient = false }
@@ -14,7 +15,7 @@ internal data class CameraPhoto(
     }.getOrDefault(0L)
     val day: String = if (timestamp > 0) captureDate.take(8) else "unknown"
     val fileSequence: Int? = Regex("(?i)DSC(\\d+)").find(name)?.groupValues?.get(1)?.toIntOrNull()
-    val identity: String = "$storageId:$handle:$name:$bytes:$captureDate"
+    val identity: String = "$cacheToken:$storageId:$handle:$name:$bytes:$captureDate"
 
     companion object {
         fun from(info: ObjectInfo): CameraPhoto = CameraPhoto(

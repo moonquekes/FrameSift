@@ -5,6 +5,7 @@ import cn.devcxl.photosync.ptp.manager.UsbPtpConnectionController
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import timber.log.Timber
+import java.util.UUID
 
 /** Uses the real-device validated GetObjectInfo path, with resumable metadata checkpoints. */
 internal class AlbumIndexLoader(private val context: Context, private val controller: UsbPtpConnectionController) {
@@ -18,23 +19,31 @@ internal class AlbumIndexLoader(private val context: Context, private val contro
             .digest(handles.sorted().joinToString(",").toByteArray()).joinToString("") { "%02x".format(it) }
         Timber.tag("USB_COMPAT").i("GALLERY_CARD_SNAPSHOT objects=%d handlesSha256=%s", handles.size, digest)
         val cache = AlbumMetadataCache(context, identity)
-        val saved = if (force) null else cache.read()
-        val reusable = saved != null && validate(saved.photos.filter { it.handle in handles })
-        val processed = if (reusable) saved!!.handles.intersect(handles.toSet()).toMutableSet() else mutableSetOf()
-        val photos = if (reusable) saved!!.photos.filter { it.handle in handles }.toMutableList() else mutableListOf()
+        val saved = cache.read()
+        val reusable = saved != null && canReuseAlbumHandles(saved.handles, handles.toSet(), force) &&
+            (handles.isEmpty() || validate(saved.photos))
+        val generation = if (reusable) requireNotNull(saved).generation else UUID.randomUUID().toString()
+        val processed = if (reusable) requireNotNull(saved).handles.toMutableSet() else mutableSetOf()
+        val photos = if (reusable) requireNotNull(saved).photos.toMutableList() else mutableListOf()
+        if (!reusable) Timber.tag("USB_COMPAT").i(
+            "GALLERY_CACHE_RESET forced=%b removed=%d current=%d",
+            force, saved?.handles?.count { it !in handles } ?: 0, handles.size
+        )
+        // Persist the empty state too: a formatted card must replace the old checkpoint immediately.
+        cache.write(processed, photos, generation)
         val pending = handles.reversed().filter { it !in processed }
         Timber.tag("USB_COMPAT").i("GALLERY_INDEX_CACHE reused=%d pending=%d", processed.size, pending.size)
         update(photos.toList(), processed.size, handles.size, pending.isEmpty())
         for ((index, page) in pending.chunked(8).withIndex()) {
             currentCoroutineContext().ensureActive()
             photos.addAll(controller.withConnectedCamera { camera ->
-                page.map { camera.getObjectInfo(it) }.map(CameraPhoto::from)
+                page.map { camera.getObjectInfo(it) }.map { CameraPhoto.from(it).copy(cacheToken = cache.namespace(generation)) }
                     .filter { it.name.endsWith(".jpg", true) || it.name.endsWith(".jpeg", true) }
             })
             processed.addAll(page)
             val complete = processed.size == handles.size
             update(photos.toList(), processed.size, handles.size, complete)
-            if (index % 16 == 15 || complete) cache.write(processed, photos)
+            if (index % 16 == 15 || complete) cache.write(processed, photos, generation)
         }
         return photos
     }
@@ -43,7 +52,7 @@ internal class AlbumIndexLoader(private val context: Context, private val contro
         if (photos.isEmpty()) return false
         return controller.withConnectedCamera { camera ->
             listOf(photos.first(), photos.last()).distinctBy { it.handle }.all { cached ->
-                CameraPhoto.from(camera.getObjectInfo(cached.handle)).identity == cached.identity
+                CameraPhoto.from(camera.getObjectInfo(cached.handle)).copy(cacheToken = cached.cacheToken).identity == cached.identity
             }
         }
     }
