@@ -34,6 +34,8 @@ class UsbPermissionReceiver : BroadcastReceiver() {
                 (context.applicationContext as? App)
                     ?.usbPtpConnectionController
                     ?.onUsbPermissionResult(device, granted)
+                // A callback without extras is resolved against the pending device by the controller.
+                if (device == null) return
                 if (granted) {
                     Toast.makeText(context, context.getString(R.string.usb_permission_granted), Toast.LENGTH_LONG).show()
                 } else {

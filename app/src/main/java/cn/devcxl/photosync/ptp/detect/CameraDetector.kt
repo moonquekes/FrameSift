@@ -8,6 +8,10 @@ import timber.log.Timber
  */
 class CameraDetector(private val device: UsbDevice) {
     fun getSupportedVendorId(): Int {
+        Timber.tag("USB_COMPAT").i(
+            "USB_IDENTIFY vid=0x%04x pid=0x%04x interfaces=%d supportedVendor=%b",
+            device.vendorId, device.productId, device.interfaceCount, vendorIds.contains(device.vendorId)
+        )
         return if (vendorIds.contains(device.vendorId)) {
             device.vendorId
         } else {

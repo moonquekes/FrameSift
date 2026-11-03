@@ -34,6 +34,7 @@ open class BaselineInitiator : NameFactory, Runnable {
         private const val CLASS_GET_EVENT_DATA: Byte = 0x65.toByte()
         private const val CLASS_DEVICE_RESET: Byte = 0x66.toByte()
         private const val CLASS_GET_DEVICE_STATUS: Byte = 0x67.toByte()
+        private const val USB_RECIP_INTERFACE = 0x01
 
         @JvmStatic
         fun byteArrayToHex(a: ByteArray): String {
@@ -124,6 +125,11 @@ open class BaselineInitiator : NameFactory, Runnable {
             }
         }
         endpointSanityCheck()
+        Timber.tag("USB_COMPAT").i(
+            "USB_INTERFACE id=%d class=%d subclass=%d protocol=%d bulkIn=0x%02x bulkOut=0x%02x interrupt=0x%02x",
+            intf!!.id, intf!!.interfaceClass, intf!!.interfaceSubclass, intf!!.interfaceProtocol,
+            epIn!!.address, epOut!!.address, epEv!!.address
+        )
         inMaxPS = epIn?.maxPacketSize ?: 0
         intrMaxPS = epEv?.maxPacketSize ?: 0
 
@@ -135,6 +141,10 @@ open class BaselineInitiator : NameFactory, Runnable {
 
         Timber.d("trying getDeviceInfoUncached")
         info = getDeviceInfoUncached()
+        Timber.tag("USB_COMPAT").i(
+            "DEVICE_INFO model=%s operations=%s",
+            info!!.model, info!!.operationsSupported.joinToString(",") { "0x%04x".format(it) }
+        )
 
         if (info!!.vendorExtensionId != 0) {
             info!!.factory = updateFactory(info!!.vendorExtensionId)
@@ -170,15 +180,18 @@ open class BaselineInitiator : NameFactory, Runnable {
     fun reset() {
         if (mConnection == null) throw PTPException("No Connection")
 
-        mConnection!!.controlTransfer(
-            (UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS).toInt(),
+        val resetLength = mConnection!!.controlTransfer(
+            // PTP class requests target the interface; ZV-E10 MTP rejects a device recipient.
+            UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIP_INTERFACE,
             CLASS_DEVICE_RESET.toInt(),
             0,
-            0,
+            intf!!.id,
             ByteArray(0),
             0,
             DEFAULT_TIMEOUT
         )
+
+        Timber.tag("USB_COMPAT").i("USB_RESET requestType=0x21 transferred=%d", resetLength)
 
         session.close()
     }
@@ -369,11 +382,11 @@ open class BaselineInitiator : NameFactory, Runnable {
 
         val data = ByteArray(33)
 
-        mConnection!!.controlTransfer(
-            (UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS).toInt(),
+        val statusLength = mConnection!!.controlTransfer(
+            UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or USB_RECIP_INTERFACE,
             CLASS_GET_DEVICE_STATUS.toInt(),
             0,
-            0,
+            intf!!.id,
             data,
             data.size,
             DEFAULT_TIMEOUT
@@ -388,6 +401,10 @@ open class BaselineInitiator : NameFactory, Runnable {
         }
         buf.offset = 4
         buf.length = buf.getU16(0)
+        Timber.tag("USB_COMPAT").i(
+            "USB_GET_STATUS requestType=0xa1 transferred=%d declaredBytes=%d response=0x%04x",
+            statusLength, buf.length, buf.getU16(2)
+        )
         if (buf.length != buf.data.size) {
         }
 
@@ -416,6 +433,19 @@ open class BaselineInitiator : NameFactory, Runnable {
 
     @Throws(PTPException::class)
     fun transactUnsync(command: Command, data: Data?): Response {
+        val traceStart = System.nanoTime()
+        val traceOperation = command.getCode() in setOf(
+            Command.GetDeviceInfo, Command.OpenSession, Command.CloseSession, Command.GetStorageIDs,
+            Command.GetStorageInfo, Command.GetObjectHandles, Command.GetObjectInfo, Command.GetThumb,
+            Command.SONY_SDIOCOMMAND
+        )
+        if (traceOperation) {
+            Timber.tag("USB_COMPAT").i(
+                "PTP_BEGIN op=%s code=0x%04x xid=%d params=%s",
+                Command._getOpcodeString(command.getCode()), command.getCode(), command.getXID(),
+                (0 until command.numParams).joinToString(",") { "0x%08x".format(command.getParam(it)) }
+            )
+        }
         if ("command" != Container.getBlockTypeName(command.blockType)) {
             throw IllegalArgumentException(command.toString())
         }
@@ -434,6 +464,7 @@ open class BaselineInitiator : NameFactory, Runnable {
         }
 
         if (info != null && !info!!.supportsOperation(opcode)) {
+            if (traceOperation) Timber.tag("USB_COMPAT").w("PTP_UNSUPPORTED code=0x%04x", opcode)
             throw UnsupportedOperationException(command.getCodeName(opcode))
         }
 
@@ -493,10 +524,9 @@ open class BaselineInitiator : NameFactory, Runnable {
                         data.data = readBuffer
                         data.length = readLen
 
-                        Timber.d("read a unkonwn pack , read again:%s", byteArrayToHex(data.data))
+                        Timber.d("read an unknown packet again: receivedBytes=%d", readLen)
                     }
-                    throw PTPException("protocol err 1, " + data +
-                            "\n data:" + byteArrayToHex(data.data))
+                    throw PTPException("protocol err 1, $data receivedBytes=$readLen")
                 }
 
                 val totalLen = data.getLength()
@@ -537,6 +567,13 @@ open class BaselineInitiator : NameFactory, Runnable {
         }
 
         abort = false
+        if (traceOperation) {
+            Timber.tag("USB_COMPAT").i(
+                "PTP_END op=%s code=0x%04x xid=%d response=0x%04x elapsedMs=%d",
+                Command._getOpcodeString(opcode), opcode, command.getXID(), response.getCode(),
+                (System.nanoTime() - traceStart) / 1_000_000
+            )
+        }
         return response
     }
 
@@ -747,6 +784,7 @@ open class BaselineInitiator : NameFactory, Runnable {
 
     @Throws(PTPException::class, IOException::class)
     fun importFile(objectHandle: Int, destPath: String): Boolean {
+        Timber.tag("USB_COMPAT").i("GetObject BEGIN handle=0x%08x", objectHandle)
 
         val outputFile = File(destPath)
 
@@ -784,11 +822,24 @@ open class BaselineInitiator : NameFactory, Runnable {
             if ((command.length % epOut!!.maxPacketSize) == 0) {
                 lenC = mConnection!!.bulkTransfer(epOut!!, command.data, 0, DEFAULT_TIMEOUT)
             }
-            val READ_BUF_SIZE = Math.max(64 * 1024, if (inMaxPS > 0) inMaxPS else 64 * 1024)
+            // This ZV-E10/Magic7 combination rejects the upstream 64 KiB read immediately.
+            val READ_BUF_SIZE = 16 * 1024
             val readBuffer = ensureImportBuffer(READ_BUF_SIZE)
             var readLen = 0
             val READ_TIMEOUT_MS = Math.max(DEFAULT_TIMEOUT, 15000)
             readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, READ_BUF_SIZE, READ_TIMEOUT_MS)
+            Timber.tag("USB_COMPAT").i(
+                "GetObject FIRST_READ handle=0x%08x requestedBytes=%d bytes=%d", objectHandle, READ_BUF_SIZE, readLen
+            )
+            if (readLen == 0) {
+                // Like transactUnsync/readResponse, tolerate a leading USB zero-length packet.
+                readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, READ_BUF_SIZE, READ_TIMEOUT_MS)
+                Timber.tag("USB_COMPAT").i("GetObject AFTER_ZLP handle=0x%08x bytes=%d", objectHandle, readLen)
+            }
+            if (readLen < Container.HDR_LEN) {
+                outputStream.close()
+                throw IOException("GetObject header is short: receivedBytes=$readLen")
+            }
 
             val data = Data(this)
             data.data = readBuffer
@@ -816,6 +867,7 @@ open class BaselineInitiator : NameFactory, Runnable {
             }
 
             val length = fullLength - Container.HDR_LEN
+            Timber.tag("USB_COMPAT").i("GetObject DATA handle=0x%08x expectedBytes=%d", objectHandle, length)
             var offset = 0
             val initialDataLength = data.length - Container.HDR_LEN
 
@@ -865,6 +917,11 @@ open class BaselineInitiator : NameFactory, Runnable {
             outputStream.flush()
             outputStream.close()
             response = readResponse()
+            Timber.tag("USB_COMPAT").i(
+                "GetObject END handle=0x%08x response=0x%04x expectedBytes=%d writtenBytes=%d fileBytes=%d elapsedMs=%d",
+                objectHandle, response.getCode(), length, totalWritten, outputFile.length(),
+                System.currentTimeMillis() - startDownloadAt
+            )
             if (response != null && response.getCode() == Response.OK) {
                 val downloadDuring = System.currentTimeMillis() - startDownloadAt
                 for (fileDownloadedListener in fileDownloadedListenerList) {
@@ -931,7 +988,9 @@ open class BaselineInitiator : NameFactory, Runnable {
             when (response.getCode()) {
                 Response.OK -> {
                     data.parse()
-                    return data.nextS32Array()
+                    return data.nextS32Array().also {
+                        Timber.tag("USB_COMPAT").i("GetStorageIDs count=%d ids=%s", it.size, it.contentToString())
+                    }
                 }
                 else -> throw PTPException(response.toString())
             }
@@ -948,7 +1007,9 @@ open class BaselineInitiator : NameFactory, Runnable {
             when (response.getCode()) {
                 Response.OK -> {
                     data.parse()
-                    return data.nextS32Array()
+                    return data.nextS32Array().also {
+                        Timber.tag("USB_COMPAT").i("GetObjectHandles storage=0x%08x count=%d", storageId, it.size)
+                    }
                 }
                 else -> throw PTPException(response.toString())
             }
@@ -970,6 +1031,17 @@ open class BaselineInitiator : NameFactory, Runnable {
                 else -> throw PTPException(response.toString())
             }
         }
+    }
+
+    /** Reads the camera-provided thumbnail without downloading or modifying the original object. */
+    @Throws(PTPException::class)
+    fun getThumb(objectHandle: Int): ByteArray = synchronized(session) {
+        val data = Data(this)
+        val response = transact1(Command.GetThumb, data, objectHandle)
+        if (response.getCode() != Response.OK) throw PTPException(response.toString())
+        val payload = data.data.copyOfRange(Container.HDR_LEN, data.getLength())
+        Timber.tag("USB_COMPAT").i("GetThumb handle=0x%08x bytes=%d", objectHandle, payload.size)
+        payload
     }
 
     @Throws(PTPException::class)

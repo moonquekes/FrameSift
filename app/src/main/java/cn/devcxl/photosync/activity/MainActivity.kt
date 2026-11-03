@@ -184,6 +184,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupButtons() {
+        binding.albumButton.setOnClickListener {
+            CameraAlbumDialog(this, connectionController) { file, name ->
+                saveFileToGalleryByCopying(file, name)
+            }.show()
+        }
         binding.exportButton.setOnClickListener { exportCurrent() }
         binding.deleteButton.setOnClickListener { showDeleteConfirmDialog() }
     }
@@ -541,7 +546,8 @@ class MainActivity : ComponentActivity() {
     // 直接复制文件至相册（用于JPEG等已经是目标格式的文件）
     private fun saveFileToGalleryByCopying(srcFile: File, displayName: String, mime: String = JPEG_MIME): Uri? {
         return saveToGallery(displayName, mime) { out ->
-            srcFile.inputStream().use { input -> input.copyTo(out) }
+            val bytes = srcFile.inputStream().use { input -> input.copyTo(out) }
+            Timber.tag("USB_COMPAT").i("JPEG_COPY bytes=%d reencoded=false", bytes)
         }
     }
 

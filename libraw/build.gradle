@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "cn.devcxl.photosync.libraw"
     compileSdk = 36
+    ndkVersion = providers.gradleProperty("android.ndkVersion").get()
 
     defaultConfig {
         minSdk = 24

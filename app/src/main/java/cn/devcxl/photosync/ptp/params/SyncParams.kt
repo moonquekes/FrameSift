@@ -6,6 +6,7 @@ package cn.devcxl.photosync.ptp.params
 object SyncParams {
     const val SYNC_TRIGGER_MODE_EVENT: Int = 0
     const val SYNC_TRIGGER_MODE_POLL_LIST: Int = 1
+    const val SYNC_TRIGGER_MODE_MANUAL: Int = 2
 
     const val SYNC_MODE_SYNC_ALL: Int = 0
     const val SYNC_MODE_SYNC_NEW_ADDED: Int = 1

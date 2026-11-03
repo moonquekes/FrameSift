@@ -5,10 +5,12 @@ import android.content.Context
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import cn.devcxl.photosync.ptp.manager.UsbPtpConnectionController
+import cn.devcxl.photosync.ptp.UsbCompatDebugTree
 import cn.devcxl.photosync.receiver.UsbPermissionReceiver
 import cn.devcxl.photosync.receiver.UsbReceiver
 import cn.devcxl.photosync.wrapper.RawWrapper
 import timber.log.Timber
+import java.io.File
 
 /**
  * Application entry point for the PhotoSync app.
@@ -48,7 +50,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        Timber.plant(Timber.DebugTree())
+        val isDebug = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        Timber.plant(if (isDebug) UsbCompatDebugTree(File(filesDir, "usb-compat.log")) else Timber.DebugTree())
+        Timber.tag("USB_COMPAT").i("APP_START sdk=%d debug=%b", android.os.Build.VERSION.SDK_INT, isDebug)
 
         try {
             val ver = RawWrapper.version()

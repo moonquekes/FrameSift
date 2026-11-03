@@ -10,6 +10,7 @@ import cn.devcxl.photosync.ptp.interfaces.FileDownloadedListener
 import cn.devcxl.photosync.ptp.interfaces.FileTransferListener
 import cn.devcxl.photosync.ptp.params.SyncParams
 import cn.devcxl.photosync.ptp.usbcamera.BaselineInitiator
+import cn.devcxl.photosync.ptp.usbcamera.Command
 import cn.devcxl.photosync.ptp.usbcamera.InitiatorFactory
 import cn.devcxl.photosync.ptp.usbcamera.PTPException
 import cn.devcxl.photosync.ptp.usbcamera.sony.SonyInitiator
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
@@ -49,9 +51,19 @@ class UsbPtpConnectionController(
 
     val connectionState: StateFlow<UsbPtpConnectionState> = _connectionState.asStateFlow()
 
+    /** Runs a camera read on IO while preventing the connection from closing during the operation. */
+    suspend fun <T> withConnectedCamera(read: (BaselineInitiator) -> T): T = withContext(ioDispatcher) {
+        stateMutex.withLock {
+            val initiator = currentInitiator ?: throw PTPException("USB camera is not connected")
+            check(initiator.isSessionActive()) { "USB session is not active" }
+            read(initiator)
+        }
+    }
+
     fun scanAndConnectIfPossible() {
         scope.launch {
             val devices = usbManager.deviceList.values.toList()
+            Timber.tag("USB_COMPAT").i("USB_SCAN devices=%d", devices.size)
             if (devices.isEmpty()) {
                 val current = stateMutex.withLock { currentDeviceId }
                 if (current == null) {
@@ -92,9 +104,19 @@ class UsbPtpConnectionController(
     }
 
     fun onUsbPermissionResult(device: UsbDevice?, granted: Boolean) {
+        Timber.tag("USB_COMPAT").i("USB_PERMISSION granted=%b hasDevice=%b", granted, device != null)
         scope.launch {
-            val deviceId = device?.toUsbPtpDeviceId()
-            if (!granted) {
+            val pendingId = stateMutex.withLock { pendingPermissionDeviceId }
+            val permissionDevice = device ?: usbManager.deviceList.values.firstOrNull {
+                it.toUsbPtpDeviceId() == pendingId
+            }
+            val permissionGranted = permissionDevice?.let(usbManager::hasPermission) == true
+            Timber.tag("USB_COMPAT").i(
+                "USB_PERMISSION_VERIFIED reportedGranted=%b resolvedDevice=%b actualGranted=%b",
+                granted, permissionDevice != null, permissionGranted
+            )
+            val deviceId = permissionDevice?.toUsbPtpDeviceId()
+            if (!permissionGranted) {
                 stateMutex.withLock {
                     if (deviceId == null || pendingPermissionDeviceId == deviceId) {
                         pendingPermissionDeviceId = null
@@ -103,12 +125,12 @@ class UsbPtpConnectionController(
                 _connectionState.value = UsbPtpConnectionState.Error(deviceId, "permission_denied")
                 return@launch
             }
-            if (device == null) {
+            if (permissionDevice == null) {
                 pendingPermissionDeviceId = null
                 _connectionState.value = UsbPtpConnectionState.Error(null, "permission_missing_device")
                 return@launch
             }
-            connectInternal(device)
+            connectInternal(permissionDevice)
         }
     }
 
@@ -152,6 +174,10 @@ class UsbPtpConnectionController(
     }
 
     private suspend fun tryStartConnection(device: UsbDevice): Boolean {
+        Timber.tag("USB_COMPAT").i(
+            "USB_CANDIDATE vid=0x%04x pid=0x%04x permission=%b",
+            device.vendorId, device.productId, usbManager.hasPermission(device)
+        )
         val candidateId = device.toUsbPtpDeviceId()
         val shouldSkip = stateMutex.withLock {
             val trackedDevice = currentDeviceId ?: pendingPermissionDeviceId
@@ -180,6 +206,7 @@ class UsbPtpConnectionController(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         usbManager.requestPermission(device, permissionIntent)
+        Timber.tag("USB_COMPAT").i("USB_PERMISSION_REQUESTED")
         Timber.d("请求设备权限 %s", device.deviceName)
     }
 
@@ -197,7 +224,11 @@ class UsbPtpConnectionController(
             produced.getClearStatus()
             produced.setSyncTriggerMode(SyncParams.SYNC_TRIGGER_MODE_POLL_LIST)
             if (produced is SonyInitiator) {
-                produced.setSyncTriggerMode(SyncParams.SYNC_TRIGGER_MODE_EVENT)
+                val supportsRemote = produced.getDeviceInfo().supportsOperation(Command.SONY_SDIOCOMMAND)
+                produced.setSyncTriggerMode(
+                    if (supportsRemote) SyncParams.SYNC_TRIGGER_MODE_EVENT else SyncParams.SYNC_TRIGGER_MODE_MANUAL
+                )
+                Timber.tag("USB_COMPAT").i("SONY_MODE remoteSupported=%b manualAlbum=%b", supportsRemote, !supportsRemote)
             }
             fileDownloadPath?.let(produced::setFileDownloadPath)
             transferListener?.let(produced::setFileTransferListener)
@@ -205,6 +236,7 @@ class UsbPtpConnectionController(
             produced.openSession()
             produced
         } catch (e: Exception) {
+            Timber.tag("USB_COMPAT").e(e, "USB_CONNECT_FAILED")
             stateMutex.withLock {
                 currentDeviceId = null
             }
@@ -218,6 +250,7 @@ class UsbPtpConnectionController(
             currentDevice = device
         }
         _connectionState.value = UsbPtpConnectionState.Connected(deviceId)
+        Timber.tag("USB_COMPAT").i("USB_CONNECTED triggerMode=%d", initiator.syncTriggerMode)
         return true
     }
 
@@ -226,6 +259,7 @@ class UsbPtpConnectionController(
         targetDeviceId: UsbPtpDeviceId?,
         resetStateAfterDisconnect: Boolean = true
     ) {
+        Timber.tag("USB_COMPAT").i("USB_DISCONNECT reason=%s", reason)
         stateMutex.withLock {
             if (currentInitiator == null && currentDeviceId == null && pendingPermissionDeviceId == null) {
                 if (resetStateAfterDisconnect && _connectionState.value !is UsbPtpConnectionState.Idle) {
