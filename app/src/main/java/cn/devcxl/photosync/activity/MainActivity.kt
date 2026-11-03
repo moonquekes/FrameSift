@@ -27,9 +27,13 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.addCallback
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -44,6 +48,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 import cn.devcxl.photosync.App
+import cn.devcxl.photosync.album.CameraAlbumScreen
 import cn.devcxl.photosync.R
 import cn.devcxl.photosync.adapter.JpegSourceInfo
 import cn.devcxl.photosync.adapter.PhotoPagerAdapter
@@ -77,6 +82,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var adapter: PhotoPagerAdapter
+    private var albumScreen: CameraAlbumScreen? = null
     private var pendingExportIndex: Int? = null
 
     private lateinit var binding: ActivityMainBinding
@@ -108,7 +114,24 @@ class MainActivity : ComponentActivity() {
         observeConnectionState()
         setupButtons()
         enableEdgeToEdge()
+        WindowCompat.getInsetsController(window, binding.root).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         configureConnectionController()
+        albumScreen = CameraAlbumScreen(this, connectionController, binding.albumContainer) { file, name ->
+            saveFileToGalleryByCopying(file, name)
+        }.also { it.onConnectionState(connectionController.connectionState.value) }
+        binding.exportButton.visibility = View.GONE
+        binding.deleteButton.visibility = View.GONE
+        onBackPressedDispatcher.addCallback(this) {
+            if (albumScreen?.handleBack() != true) finish()
+        }
         connectMTPDevice()
     }
 
@@ -184,16 +207,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupButtons() {
-        binding.albumButton.setOnClickListener {
-            CameraAlbumDialog(this, connectionController) { file, name ->
-                saveFileToGalleryByCopying(file, name)
-            }.show()
-        }
         binding.exportButton.setOnClickListener { exportCurrent() }
         binding.deleteButton.setOnClickListener { showDeleteConfirmDialog() }
     }
 
     override fun onDestroy() {
+        albumScreen?.close()
         connectionController.setFileTransferListener(null)
         connectionController.setFileDownloadedListener(null)
         connectionController.disconnect("activity_destroyed")
@@ -206,7 +225,8 @@ class MainActivity : ComponentActivity() {
 
     private fun configureConnectionController() {
         connectionController.setFileDownloadPath(externalCacheDir?.absolutePath)
-        connectionController.setFileTransferListener { _, _, totalByteLength, transterByteLength ->
+        connectionController.setFileTransferListener { _, handle, totalByteLength, transterByteLength ->
+            albumScreen?.onUsbProgress(handle, totalByteLength.toLong(), transterByteLength.toLong())
             val progressPercent = if (totalByteLength > 0) {
                 ((transterByteLength * 100L) / totalByteLength).toInt().coerceIn(0, 100)
             } else 0
@@ -236,6 +256,7 @@ class MainActivity : ComponentActivity() {
         state: UsbPtpConnectionState,
         previousState: UsbPtpConnectionState?
     ) {
+        albumScreen?.onConnectionState(state)
         when (state) {
             is UsbPtpConnectionState.Connected -> {
                 if (previousState !is UsbPtpConnectionState.Connected) {

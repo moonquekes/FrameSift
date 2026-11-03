@@ -1,0 +1,7 @@
+<resources>
+    <color name="gallery_background">#101618</color>
+    <color name="gallery_surface">#1B2427</color>
+    <color name="gallery_text">#F4F6F3</color>
+    <color name="gallery_muted">#9BAAAE</color>
+    <color name="gallery_accent">#D0E9C3</color>
+</resources>

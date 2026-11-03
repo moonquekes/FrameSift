@@ -47,15 +47,6 @@
                 android:src="@android:drawable/ic_menu_save"
                 android:visibility="visible"/>
 
-        <Button
-                android:id="@+id/albumButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="16dp"
-                android:text="@string/camera_album"/>
-
         <ImageButton
                 android:id="@+id/deleteButton"
                 android:layout_width="wrap_content"
@@ -67,6 +58,12 @@
                 android:contentDescription="@string/delete_photo"
                 android:src="@android:drawable/ic_menu_delete"
                 android:visibility="visible"/>
+
+        <FrameLayout
+                android:id="@+id/albumContainer"
+                android:elevation="8dp"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
 
     </FrameLayout>
 

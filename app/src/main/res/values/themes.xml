@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PhotoSync" parent="android:Theme.Material.Light.NoActionBar"/>
+    <style name="Theme.PhotoSync" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/gallery_background</item>
+        <item name="android:colorAccent">@color/gallery_accent</item>
+        <item name="android:statusBarColor">@color/gallery_background</item>
+        <item name="android:navigationBarColor">@color/gallery_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
 </resources>

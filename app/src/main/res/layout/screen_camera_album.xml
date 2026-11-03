@@ -1,0 +1,42 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/galleryRoot" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@color/gallery_background">
+    <FrameLayout android:id="@+id/galleryChromeContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:clipChildren="true">
+    <LinearLayout android:id="@+id/galleryChrome" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp" android:gravity="center_vertical" android:paddingStart="20dp" android:paddingEnd="20dp">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/gallery_title" android:textSize="24sp" android:fontFamily="sans-serif-medium" android:textColor="@color/gallery_text"/>
+            <TextView android:id="@+id/galleryConnection" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:maxLines="1" android:ellipsize="end" android:text="@string/gallery_waiting" android:textColor="@color/gallery_accent" android:textSize="10sp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/galleryRefresh" android:layout_width="44dp" android:layout_height="44dp" android:gravity="center" android:text="@string/gallery_refresh_symbol" android:contentDescription="@string/gallery_refresh" android:textSize="28sp" android:textColor="@color/gallery_text" android:background="@drawable/gallery_chip" android:clickable="true" android:focusable="true"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="44dp" android:paddingStart="20dp" android:paddingEnd="20dp" android:gravity="center_vertical">
+        <TextView android:id="@+id/galleryDate" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:text="@string/gallery_all_dates" android:textSize="16sp" android:fontFamily="sans-serif-medium" android:textColor="@color/gallery_text" android:clickable="true" android:focusable="true"/>
+        <TextView android:id="@+id/galleryBurst" android:layout_width="wrap_content" android:layout_height="32dp" android:layout_marginEnd="8dp" android:gravity="center" android:text="@string/gallery_burst_chip" android:textSize="11sp" android:textColor="@color/gallery_chip_text" android:background="@drawable/gallery_chip" android:clickable="true" android:focusable="true"/>
+        <TextView android:id="@+id/gallerySort" android:layout_width="64dp" android:layout_height="44dp" android:gravity="center" android:text="@string/gallery_newest" android:textSize="11sp" android:textColor="@color/gallery_muted" android:clickable="true" android:focusable="true"/>
+    </LinearLayout>
+    <TextView android:id="@+id/galleryIndexStatus" android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center_vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:maxLines="1" android:ellipsize="end" android:text="@string/gallery_select_hint" android:textSize="10sp" android:textColor="@color/gallery_muted"/>
+    </LinearLayout>
+    </FrameLayout>
+    <ProgressBar android:id="@+id/galleryIndexProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="2dp" android:progressTint="@color/gallery_accent" android:indeterminateTint="@color/gallery_accent" android:visibility="gone"/>
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <androidx.recyclerview.widget.RecyclerView android:id="@+id/galleryGrid" android:layout_width="match_parent" android:layout_height="match_parent" android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingBottom="16dp" android:clipToPadding="false"/>
+        <LinearLayout android:id="@+id/galleryEmpty" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center" android:padding="32dp">
+            <ImageView android:layout_width="64dp" android:layout_height="64dp" android:src="@drawable/gallery_camera" android:contentDescription="@null"/>
+            <TextView android:id="@+id/galleryEmptyTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="@string/gallery_empty_title" android:textColor="@color/gallery_text" android:textSize="18sp"/>
+            <TextView android:id="@+id/galleryEmptyBody" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="@string/gallery_empty_body" android:textColor="@color/gallery_muted" android:textSize="12sp" android:gravity="center"/>
+        </LinearLayout>
+    </FrameLayout>
+    <LinearLayout android:id="@+id/galleryTransfer" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp" android:background="@color/gallery_surface" android:visibility="gone">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
+            <TextView android:id="@+id/galleryTransferTitle" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/gallery_text" android:textSize="14sp"/>
+            <TextView android:id="@+id/galleryTransferPercent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/gallery_accent" android:textSize="14sp"/>
+        </LinearLayout>
+        <ProgressBar android:id="@+id/galleryTransferProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="12dp" android:progressTint="@color/gallery_accent" android:progressBackgroundTint="#344044" android:max="100"/>
+        <TextView android:id="@+id/galleryTransferStage" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/gallery_keep_connected" android:textColor="@color/gallery_muted" android:textSize="11sp"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="84dp" android:gravity="center_vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:background="@color/gallery_background">
+        <TextView android:id="@+id/gallerySelected" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/gallery_select_hint" android:textSize="12sp" android:textColor="@color/gallery_muted"/>
+        <TextView android:id="@+id/galleryImport" android:layout_width="wrap_content" android:layout_height="48dp" android:minWidth="128dp" android:paddingStart="22dp" android:paddingEnd="22dp" android:gravity="center" android:background="@drawable/gallery_primary" android:text="@string/gallery_select" android:textColor="#18251B" android:textSize="14sp" android:fontFamily="sans-serif-medium" android:clickable="true" android:focusable="true"/>
+    </LinearLayout>
+</LinearLayout>

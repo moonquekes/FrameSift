@@ -322,6 +322,21 @@ open class BaselineInitiator : NameFactory, Runnable {
     fun getClearStatus(): Int {
         val buf = Buffer(null, 0)
         var retval = getDeviceStatus(buf)
+        val readyDeadline = System.nanoTime() + 5_000_000_000L
+        var busyRetries = 0
+        while (retval == Response.DeviceBusy && System.nanoTime() < readyDeadline) {
+            try {
+                Thread.sleep(100)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw PTPException("USB initialization interrupted", e)
+            }
+            retval = getDeviceStatus(buf)
+            busyRetries++
+        }
+        if (busyRetries > 0) {
+            Timber.tag("USB_COMPAT").i("USB_BUSY_WAIT retries=%d response=0x%04x", busyRetries, retval)
+        }
 
         if (buf.length != 4) {
             while ((buf.offset + 4) <= buf.length) {
@@ -437,7 +452,7 @@ open class BaselineInitiator : NameFactory, Runnable {
         val traceOperation = command.getCode() in setOf(
             Command.GetDeviceInfo, Command.OpenSession, Command.CloseSession, Command.GetStorageIDs,
             Command.GetStorageInfo, Command.GetObjectHandles, Command.GetObjectInfo, Command.GetThumb,
-            Command.SONY_SDIOCOMMAND
+            Command.SONY_SDIOCOMMAND, Command.GetPartialObject
         )
         if (traceOperation) {
             Timber.tag("USB_COMPAT").i(
@@ -783,7 +798,7 @@ open class BaselineInitiator : NameFactory, Runnable {
     }
 
     @Throws(PTPException::class, IOException::class)
-    fun importFile(objectHandle: Int, destPath: String): Boolean {
+    fun importFile(objectHandle: Int, destPath: String, notifyDownloaded: Boolean = true): Boolean {
         Timber.tag("USB_COMPAT").i("GetObject BEGIN handle=0x%08x", objectHandle)
 
         val outputFile = File(destPath)
@@ -924,7 +939,7 @@ open class BaselineInitiator : NameFactory, Runnable {
             )
             if (response != null && response.getCode() == Response.OK) {
                 val downloadDuring = System.currentTimeMillis() - startDownloadAt
-                for (fileDownloadedListener in fileDownloadedListenerList) {
+                if (notifyDownloaded) for (fileDownloadedListener in fileDownloadedListenerList) {
                     fileDownloadedListener.onFileDownloaded(this, objectHandle, outputFile, downloadDuring)
                 }
                 return true
@@ -1042,6 +1057,14 @@ open class BaselineInitiator : NameFactory, Runnable {
         val payload = data.data.copyOfRange(Container.HDR_LEN, data.getLength())
         Timber.tag("USB_COMPAT").i("GetThumb handle=0x%08x bytes=%d", objectHandle, payload.size)
         payload
+    }
+
+    /** Reads only the JPEG header required for orientation, leaving the original object unchanged. */
+    fun getObjectHeader(objectHandle: Int, bytes: Int = 512): ByteArray = synchronized(session) {
+        val data = Data(this)
+        val response = transact3(Command.GetPartialObject, data, objectHandle, 0, bytes)
+        if (response.getCode() != Response.OK) throw PTPException(response.toString())
+        data.data.copyOfRange(Container.HDR_LEN, data.getLength())
     }
 
     @Throws(PTPException::class)

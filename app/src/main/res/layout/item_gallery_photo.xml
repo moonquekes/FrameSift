@@ -1,0 +1,8 @@
+<cn.devcxl.photosync.album.SquarePhotoView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_margin="2dp" android:background="@drawable/gallery_tile">
+    <ImageView android:id="@+id/tileImage" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="@string/gallery_photo"/>
+    <View android:id="@+id/tileSelectedOverlay" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/gallery_selection" android:visibility="gone"/>
+    <TextView android:id="@+id/tileCheck" android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="top|end" android:layout_margin="7dp" android:gravity="center" android:background="@drawable/gallery_check" android:textColor="#18251B" android:textSize="16sp" android:contentDescription="@string/gallery_select_photo" android:clickable="true" android:focusable="true"/>
+    <TextView android:id="@+id/tileBurst" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|start" android:layout_margin="6dp" android:background="@drawable/gallery_badge" android:textColor="@color/gallery_text" android:textSize="9sp" android:visibility="gone"/>
+    <TextView android:id="@+id/tileImported" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|end" android:layout_margin="6dp" android:background="@drawable/gallery_badge" android:text="@string/gallery_imported_mark" android:textColor="@color/gallery_accent" android:textSize="9sp" android:visibility="gone"/>
+</cn.devcxl.photosync.album.SquarePhotoView>

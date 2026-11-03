@@ -1,0 +1,15 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/gallery_background">
+    <com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView android:id="@+id/previewOriginal" android:layout_width="match_parent" android:layout_height="match_parent"/>
+    <ImageView android:id="@+id/previewQuick" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:contentDescription="@string/gallery_photo"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="72dp" android:layout_gravity="top" android:gravity="center_vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:background="#B8101618">
+        <TextView android:id="@+id/previewBack" android:layout_width="64dp" android:layout_height="48dp" android:gravity="center_vertical" android:text="@string/gallery_back" android:textSize="14sp" android:textColor="@color/gallery_text" android:clickable="true" android:focusable="true"/>
+        <TextView android:id="@+id/previewPosition" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:textColor="@color/gallery_text" android:textSize="13sp"/>
+        <Space android:layout_width="64dp" android:layout_height="1dp"/>
+    </LinearLayout>
+    <TextView android:id="@+id/previewLoading" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center_horizontal|top" android:layout_marginTop="84dp" android:background="@drawable/gallery_badge" android:textColor="@color/gallery_accent" android:textSize="12sp"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="100dp" android:layout_gravity="bottom" android:gravity="center" android:paddingStart="24dp" android:paddingEnd="24dp" android:background="#C8101618">
+        <TextView android:id="@+id/previewPrevious" android:layout_width="56dp" android:layout_height="56dp" android:gravity="center" android:text="@string/gallery_previous_symbol" android:contentDescription="@string/gallery_previous" android:textColor="@color/gallery_text" android:textSize="36sp" android:clickable="true" android:focusable="true"/>
+        <TextView android:id="@+id/previewPick" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginStart="24dp" android:layout_marginEnd="24dp" android:gravity="center" android:background="@drawable/gallery_chip" android:textColor="@color/gallery_chip_text" android:textSize="14sp" android:clickable="true" android:focusable="true"/>
+        <TextView android:id="@+id/previewNext" android:layout_width="56dp" android:layout_height="56dp" android:gravity="center" android:text="@string/gallery_next_symbol" android:contentDescription="@string/gallery_next" android:textColor="@color/gallery_text" android:textSize="36sp" android:clickable="true" android:focusable="true"/>
+    </LinearLayout>
+</FrameLayout>
