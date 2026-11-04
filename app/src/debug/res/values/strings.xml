@@ -1,0 +1,4 @@
+<resources>
+    <string name="usb_benchmark_running">正在执行只读 USB 性能测试…</string>
+    <string name="usb_benchmark_complete">测试结束，结果已保存在应用私有目录。</string>
+</resources>

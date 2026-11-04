@@ -12,9 +12,10 @@ import androidx.recyclerview.widget.RecyclerView
 import cn.devcxl.photosync.R
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.Job
 
 internal class AlbumGridAdapter(
-    private val thumbnail: (CameraPhoto, (Bitmap?) -> Unit) -> Unit,
+    private val thumbnail: (CameraPhoto, (Bitmap?) -> Unit) -> Job?,
     private val selected: (Int) -> Boolean,
     private val imported: (Int) -> Boolean,
     private val selectionMode: () -> Boolean,
@@ -56,16 +57,13 @@ internal class AlbumGridAdapter(
     private fun bindPhoto(holder: PhotoHolder, tile: AlbumTile.Photo) {
         val view = holder.itemView
         val photo = tile.cover
+        holder.request?.cancel()
+        holder.photo = photo
         holder.identity = photo.identity
         view.clipToOutline = true
         holder.image.setImageResource(R.drawable.gallery_camera)
         holder.image.scaleType = ImageView.ScaleType.CENTER_INSIDE
-        thumbnail(photo) { bitmap ->
-            if (holder.identity == photo.identity && bitmap != null) {
-                holder.image.scaleType = ImageView.ScaleType.CENTER_CROP
-                holder.image.setImageBitmap(bitmap)
-            }
-        }
+        if (view.isAttachedToWindow) loadThumbnail(holder)
         val chosen = tile.members.count { selected(it.handle) }
         val check = view.findViewById<TextView>(R.id.tileCheck)
         check.isSelected = chosen > 0
@@ -84,10 +82,38 @@ internal class AlbumGridAdapter(
         view.setOnLongClickListener { beginSelection(tile.members); true }
     }
 
+    private fun loadThumbnail(holder: PhotoHolder) {
+        val photo = holder.photo ?: return
+        if (holder.request?.isActive == true) return
+        holder.request = thumbnail(photo) { bitmap ->
+            if (holder.identity == photo.identity && bitmap != null) {
+                holder.image.scaleType = ImageView.ScaleType.CENTER_CROP
+                holder.image.setImageBitmap(bitmap)
+            }
+        }
+    }
+
+    override fun onViewAttachedToWindow(holder: RecyclerView.ViewHolder) {
+        super.onViewAttachedToWindow(holder)
+        if (holder is PhotoHolder) loadThumbnail(holder)
+    }
+
+    override fun onViewDetachedFromWindow(holder: RecyclerView.ViewHolder) {
+        if (holder is PhotoHolder) holder.request?.cancel()
+        super.onViewDetachedFromWindow(holder)
+    }
+
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        if (holder is PhotoHolder) { holder.request?.cancel(); holder.photo = null; holder.identity = "" }
+        super.onViewRecycled(holder)
+    }
+
     private class DayHolder(view: View) : RecyclerView.ViewHolder(view)
     private class PhotoHolder(view: View) : RecyclerView.ViewHolder(view) {
         val image: ImageView = view.findViewById(R.id.tileImage)
         var identity: String = ""
+        var photo: CameraPhoto? = null
+        var request: Job? = null
     }
 
     private object Difference : DiffUtil.ItemCallback<AlbumTile>() {

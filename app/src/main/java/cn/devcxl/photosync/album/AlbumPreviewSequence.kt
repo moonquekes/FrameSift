@@ -7,11 +7,12 @@ internal data class AlbumPreviewSequence(
 
 /** Stacks affect only the grid; the pager always includes every photo in the current date filter. */
 internal fun buildPreviewSequence(
-    photos: List<CameraPhoto>, sort: AlbumSort, date: String?, cover: Int, showBursts: Boolean
+    photos: List<CameraPhoto>, sort: AlbumSort, date: String?, cover: Int, showBursts: Boolean,
+    burstSettings: BurstSettings = BurstSettings()
 ): AlbumPreviewSequence {
     val ordered = sortPhotos(photos.filter { date == null || it.day == date }, sort)
     val positions = ordered.mapIndexed { index, photo -> photo.handle to index }.toMap()
-    val bursts = if (showBursts) burstCandidates(ordered).filter { it.size > 1 }.flatMap { group ->
+    val bursts = if (showBursts) burstCandidates(ordered, burstSettings).filter { it.size > 1 }.flatMap { group ->
         group.sortedBy { positions[it.handle] }.mapIndexed { index, photo ->
             photo.handle to BurstPosition(index + 1, group.size)
         }

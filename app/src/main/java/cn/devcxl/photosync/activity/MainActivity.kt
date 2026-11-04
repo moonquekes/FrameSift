@@ -14,6 +14,7 @@ import java.util.Locale
 import android.Manifest
 import android.app.AlertDialog
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -58,6 +59,8 @@ import cn.devcxl.photosync.data.PhotoDao
 import cn.devcxl.photosync.data.entity.PhotoEntity
 import cn.devcxl.photosync.databinding.ActivityMainBinding
 import cn.devcxl.photosync.ptp.manager.UsbPtpConnectionState
+import cn.devcxl.photosync.ptp.interfaces.FileDownloadedListener
+import cn.devcxl.photosync.ptp.interfaces.FileTransferListener
 import cn.devcxl.photosync.utils.ExtensionUtils
 import cn.devcxl.photosync.wrapper.RawWrapper
 
@@ -215,10 +218,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         albumScreen?.close()
-        connectionController.setFileTransferListener(null)
-        connectionController.setFileDownloadedListener(null)
-        connectionController.disconnect("activity_destroyed")
+        connectionController.releaseUi(this)
         super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        connectionController.scanAndConnectIfPossible(requestPermission = false)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        connectionController.scanAndConnectIfPossible()
     }
 
     fun connectMTPDevice() {
@@ -226,8 +238,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun configureConnectionController() {
-        connectionController.setFileDownloadPath(externalCacheDir?.absolutePath)
-        connectionController.setFileTransferListener { _, handle, totalByteLength, transterByteLength ->
+        val transfer = FileTransferListener { _, handle, totalByteLength, transterByteLength ->
             albumScreen?.onUsbProgress(handle, totalByteLength.toLong(), transterByteLength.toLong())
             val progressPercent = if (totalByteLength > 0) {
                 ((transterByteLength * 100L) / totalByteLength).toInt().coerceIn(0, 100)
@@ -239,7 +250,7 @@ class MainActivity : ComponentActivity() {
                 binding.progressBar.progress = progressPercent
             }
         }
-        connectionController.setFileDownloadedListener { _, _, localFile, timeduring ->
+        val downloaded = FileDownloadedListener { _, _, localFile, timeduring ->
             Timber.v("file downloaded at %s, time: %sms", localFile.absolutePath, timeduring)
             lifecycleScope.launch(Dispatchers.Main) { binding.progressBar.visibility = View.GONE }
 
@@ -252,6 +263,7 @@ class MainActivity : ComponentActivity() {
                 insertItemAndReveal(localFile)
             }
         }
+        connectionController.bindUi(this, externalCacheDir?.absolutePath, transfer, downloaded)
     }
 
     private fun renderUsbConnectionState(

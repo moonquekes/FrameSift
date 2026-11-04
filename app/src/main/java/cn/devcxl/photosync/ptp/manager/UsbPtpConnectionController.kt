@@ -39,6 +39,8 @@ class UsbPtpConnectionController(
     private val usbManager = appContext.getSystemService(Context.USB_SERVICE) as UsbManager
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val stateMutex = Mutex()
+    private val connectionMutex = Mutex()
+    private val cameraReads = CameraReadQueue(scope)
     private val _connectionState = MutableStateFlow<UsbPtpConnectionState>(UsbPtpConnectionState.Idle)
 
     private var currentInitiator: BaselineInitiator? = null
@@ -48,31 +50,38 @@ class UsbPtpConnectionController(
     private var transferListener: FileTransferListener? = null
     private var downloadedListener: FileDownloadedListener? = null
     private var fileDownloadPath: String? = null
+    private var uiOwner: Any? = null
 
     val connectionState: StateFlow<UsbPtpConnectionState> = _connectionState.asStateFlow()
 
     /** Runs a camera read on IO while preventing the connection from closing during the operation. */
-    suspend fun <T> withConnectedCamera(read: (BaselineInitiator) -> T): T = withContext(ioDispatcher) {
-        stateMutex.withLock {
-            val initiator = currentInitiator ?: throw PTPException("USB camera is not connected")
-            check(initiator.isSessionActive()) { "USB session is not active" }
-            read(initiator)
+    internal suspend fun <T> withConnectedCamera(
+        priority: CameraReadPriority = CameraReadPriority.BACKGROUND, key: String? = null,
+        read: (BaselineInitiator) -> T
+    ): T = cameraReads.submit(priority, key) {
+        withContext(ioDispatcher) {
+            stateMutex.withLock {
+                val initiator = currentInitiator ?: throw PTPException("USB camera is not connected")
+                check(initiator.isSessionActive()) { "USB session is not active" }
+                read(initiator)
+            }
         }
     }
 
-    fun scanAndConnectIfPossible() {
+    fun scanAndConnectIfPossible(requestPermission: Boolean = true) {
         scope.launch {
             val devices = usbManager.deviceList.values.toList()
             Timber.tag("USB_COMPAT").i("USB_SCAN devices=%d", devices.size)
             if (devices.isEmpty()) {
                 val current = stateMutex.withLock { currentDeviceId }
-                if (current == null) {
-                    _connectionState.value = UsbPtpConnectionState.Disconnected(null, "no_device")
+                connectionMutex.withLock {
+                    if (current != null) disconnectInternal("no_device", current)
+                    else _connectionState.value = UsbPtpConnectionState.Disconnected(null, "no_device")
                 }
                 return@launch
             }
             devices.forEach { device ->
-                val connected = tryStartConnection(device)
+                val connected = tryStartConnection(device, requestPermission)
                 if (connected) {
                     return@launch
                 }
@@ -83,61 +92,103 @@ class UsbPtpConnectionController(
     fun onUsbAttached(device: UsbDevice?) {
         if (device == null) return
         scope.launch {
-            tryStartConnection(device)
+            // Let the system's default-app routing grant access first; do not race it with a second dialog.
+            tryStartConnection(device, requestPermission = false)
         }
     }
 
     fun onUsbDetached(device: UsbDevice?) {
         scope.launch {
-            val detachedId = device?.toUsbPtpDeviceId()
-            val shouldDisconnect = stateMutex.withLock {
-                if (detachedId == null) {
-                    currentDeviceId ?: pendingPermissionDeviceId
-                } else {
-                    resolveDetachedDisconnectTarget(currentDeviceId, pendingPermissionDeviceId, detachedId)
+            connectionMutex.withLock {
+                val detachedId = device?.toUsbPtpDeviceId()
+                val shouldDisconnect = stateMutex.withLock {
+                    if (detachedId == null) {
+                        currentDeviceId ?: pendingPermissionDeviceId
+                    } else {
+                        resolveDetachedDisconnectTarget(currentDeviceId, pendingPermissionDeviceId, detachedId)
+                    }
                 }
-            }
-            if (shouldDisconnect != null) {
-                disconnectInternal("usb_detached", shouldDisconnect)
+                if (shouldDisconnect != null) {
+                    disconnectInternal("usb_detached", shouldDisconnect)
+                }
             }
         }
     }
+
 
     fun onUsbPermissionResult(device: UsbDevice?, granted: Boolean) {
         Timber.tag("USB_COMPAT").i("USB_PERMISSION granted=%b hasDevice=%b", granted, device != null)
         scope.launch {
-            val pendingId = stateMutex.withLock { pendingPermissionDeviceId }
-            val permissionDevice = device ?: usbManager.deviceList.values.firstOrNull {
-                it.toUsbPtpDeviceId() == pendingId
-            }
-            val permissionGranted = permissionDevice?.let(usbManager::hasPermission) == true
-            Timber.tag("USB_COMPAT").i(
-                "USB_PERMISSION_VERIFIED reportedGranted=%b resolvedDevice=%b actualGranted=%b",
-                granted, permissionDevice != null, permissionGranted
-            )
-            val deviceId = permissionDevice?.toUsbPtpDeviceId()
-            if (!permissionGranted) {
-                stateMutex.withLock {
-                    if (deviceId == null || pendingPermissionDeviceId == deviceId) {
-                        pendingPermissionDeviceId = null
-                    }
+            connectionMutex.withLock {
+                val pendingId = stateMutex.withLock { pendingPermissionDeviceId }
+                if (pendingId == null && device == null) {
+                    Timber.tag("USB_COMPAT").i("USB_PERMISSION_IGNORED noPendingRequest=true")
+                    return@withLock
                 }
-                _connectionState.value = UsbPtpConnectionState.Error(deviceId, "permission_denied")
-                return@launch
+                val permissionDevice = device ?: usbManager.deviceList.values.firstOrNull {
+                    it.toUsbPtpDeviceId() == pendingId
+                }
+                val permissionGranted = permissionDevice?.let(usbManager::hasPermission) == true
+                Timber.tag("USB_COMPAT").i(
+                    "USB_PERMISSION_VERIFIED reportedGranted=%b resolvedDevice=%b actualGranted=%b",
+                    granted, permissionDevice != null, permissionGranted
+                )
+                val deviceId = permissionDevice?.toUsbPtpDeviceId()
+                if (!permissionGranted) {
+                    stateMutex.withLock {
+                        if (deviceId == null || pendingPermissionDeviceId == deviceId) {
+                            pendingPermissionDeviceId = null
+                        }
+                    }
+                    _connectionState.value = UsbPtpConnectionState.Error(deviceId, "permission_denied")
+                    return@withLock
+                }
+                if (permissionDevice == null) {
+                    pendingPermissionDeviceId = null
+                    _connectionState.value = UsbPtpConnectionState.Error(null, "permission_missing_device")
+                    return@withLock
+                }
+                if (_connectionState.value !is UsbPtpConnectionState.Connected || currentDeviceId != deviceId) {
+                    connectInternal(permissionDevice)
+                }
             }
-            if (permissionDevice == null) {
-                pendingPermissionDeviceId = null
-                _connectionState.value = UsbPtpConnectionState.Error(null, "permission_missing_device")
-                return@launch
-            }
-            connectInternal(permissionDevice)
         }
     }
 
+
     fun disconnect(reason: String = "manual_disconnect") {
         scope.launch {
-            disconnectInternal(reason, null)
+            connectionMutex.withLock { disconnectInternal(reason, null) }
         }
+    }
+
+    /** Replaces UI callbacks atomically without closing the Application-owned USB session. */
+    fun bindUi(owner: Any, path: String?, transfer: FileTransferListener, downloaded: FileDownloadedListener) {
+        scope.launch { stateMutex.withLock {
+            uiOwner = owner
+            fileDownloadPath = path
+            transferListener = transfer
+            downloadedListener = downloaded
+            currentInitiator?.apply {
+                path?.let(::setFileDownloadPath)
+                resetFileTransferListener(); setFileTransferListener(transfer)
+                resetFileDownloadedListener(); setFileDownloadedListener(downloaded)
+            }
+            Timber.tag("USB_COMPAT").i("USB_UI_BOUND")
+        } }
+    }
+
+    /** A late-destroyed screen must not remove the replacement screen's callbacks. */
+    fun releaseUi(owner: Any) {
+        scope.launch { stateMutex.withLock {
+            if (uiOwner !== owner) return@withLock
+            uiOwner = null
+            transferListener = null
+            downloadedListener = null
+            currentInitiator?.resetFileTransferListener()
+            currentInitiator?.resetFileDownloadedListener()
+            Timber.tag("USB_COMPAT").i("USB_UI_RELEASED connectionRetained=%b", currentInitiator != null)
+        } }
     }
 
     fun setFileDownloadPath(path: String?) {
@@ -173,7 +224,7 @@ class UsbPtpConnectionController(
         }
     }
 
-    private suspend fun tryStartConnection(device: UsbDevice): Boolean {
+    private suspend fun tryStartConnection(device: UsbDevice, requestPermission: Boolean): Boolean = connectionMutex.withLock {
         Timber.tag("USB_COMPAT").i(
             "USB_CANDIDATE vid=0x%04x pid=0x%04x permission=%b",
             device.vendorId, device.productId, usbManager.hasPermission(device)
@@ -183,15 +234,18 @@ class UsbPtpConnectionController(
             val trackedDevice = currentDeviceId ?: pendingPermissionDeviceId
             shouldSkipConnect(_connectionState.value, trackedDevice, candidateId)
         }
-        if (shouldSkip) {
+        val permission = usbManager.hasPermission(device)
+        if (shouldSkip && (permission || _connectionState.value !is UsbPtpConnectionState.Connected)) {
             Timber.i("USB device already managed, skipping reconnect: %s", candidateId.deviceName)
-            return true
+            return@withLock true
         }
-        if (!usbManager.hasPermission(device)) {
-            requestPermission(device, candidateId)
-            return false
+        if (!permission) {
+            if (currentInitiator != null) disconnectInternal("permission_lost", candidateId)
+            if (requestPermission) this@UsbPtpConnectionController.requestPermission(device, candidateId)
+            else _connectionState.value = UsbPtpConnectionState.Error(candidateId, "permission_required")
+            return@withLock false
         }
-        return connectInternal(device)
+        connectInternal(device)
     }
 
     private suspend fun requestPermission(device: UsbDevice, deviceId: UsbPtpDeviceId) {

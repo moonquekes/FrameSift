@@ -2,9 +2,11 @@ package cn.devcxl.photosync.album
 
 import android.app.Dialog
 import android.graphics.Color
+import android.graphics.PointF
 import android.graphics.drawable.ColorDrawable
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -24,8 +26,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlin.math.abs
+import java.io.File
 
-/** Large original preview with per-image selection; opening it never publishes an image to the gallery. */
+/** Cached preview first; full JPEG is requested only by an explicit action or a zoom gesture. */
 internal class AlbumPreviewDialog(
     private val activity: ComponentActivity,
     private val photos: List<CameraPhoto>,
@@ -48,11 +51,14 @@ internal class AlbumPreviewDialog(
     private val quick: ImageView = root.findViewById(R.id.previewQuick)
     private val loading: TextView = root.findViewById(R.id.previewLoading)
     private val pick: TextView = root.findViewById(R.id.previewPick)
+    private val loadOriginal: View = root.findViewById(R.id.previewLoadOriginal)
+    private val exif = PreviewExif(activity, root).apply { requestData = { showMetadata(photos[index]) } }
     private var index = initialIndex
     private var currentJob: Job? = null
-    private var prefetchJob: Job? = null
-    private var direction = 1
+    private var metadataJob: Job? = null
     private var loadingCurrent = false
+    private var originalLoaded = false
+    private var requestedZoom = 1f
 
     fun show() {
         dialog.setContentView(root)
@@ -69,7 +75,17 @@ internal class AlbumPreviewDialog(
         root.findViewById<View>(R.id.previewPrevious).setOnClickListener { move(-1) }
         root.findViewById<View>(R.id.previewNext).setOnClickListener { move(1) }
         pick.setOnClickListener { toggle(photos[index]); renderSelection() }
+        loadOriginal.setOnClickListener { showOriginal(photos[index]) }
         original.orientation = SubsamplingScaleImageView.ORIENTATION_USE_EXIF
+        bindGestures()
+        dialog.setOnDismissListener { scope.cancel(); original.recycle(); transfers.clearPins() }
+        dialog.show()
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        dialog.window?.let(AlbumSystemBars::show)
+        render()
+    }
+
+    private fun bindGestures() {
         val gestures = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(first: MotionEvent?, last: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 if (first == null || abs(velocityX) < abs(velocityY) || original.scale > original.minScale * 1.15f) return false
@@ -78,13 +94,17 @@ internal class AlbumPreviewDialog(
                 return true
             }
         })
+        val zoom = ScaleGestureDetector(activity, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean { requestedZoom = 1f; return true }
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                requestedZoom = (requestedZoom * detector.scaleFactor).coerceIn(1f, 4f)
+                if (requestedZoom > 1.12f) showOriginal(photos[index])
+                return true
+            }
+        })
         original.setOnTouchListener { _, event -> gestures.onTouchEvent(event) }
-        quick.setOnTouchListener { _, event -> gestures.onTouchEvent(event) }
-        dialog.setOnDismissListener { scope.cancel(); original.recycle(); transfers.clearPins() }
-        dialog.show()
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        dialog.window?.let(AlbumSystemBars::show)
-        render()
+        quick.isClickable = true
+        quick.setOnTouchListener { _, event -> zoom.onTouchEvent(event); gestures.onTouchEvent(event); true }
     }
 
     fun onProgress(handle: Int, total: Long, done: Long) {
@@ -98,7 +118,6 @@ internal class AlbumPreviewDialog(
     private fun move(delta: Int) {
         val next = (index + delta).coerceIn(0, photos.lastIndex)
         if (next == index) return
-        direction = delta
         index = next
         render()
     }
@@ -110,16 +129,19 @@ internal class AlbumPreviewDialog(
 
     private fun render() {
         currentJob?.cancel()
-        prefetchJob?.cancel()
+        metadataJob?.cancel()
         original.recycle()
+        exif.clear()
         val photo = photos[index]
-        val adjacent = photos.getOrNull(index + direction)
-        transfers.pin(listOfNotNull(photo, adjacent))
-        loadingCurrent = true
+        transfers.pin(listOf(photo))
+        loadingCurrent = false
+        originalLoaded = false
+        requestedZoom = 1f
         quick.visibility = View.VISIBLE
         quick.setImageBitmap(thumbnails.cached(photo))
         loading.visibility = View.VISIBLE
-        loading.text = activity.getString(R.string.gallery_preview_loading, 0)
+        loading.setText(R.string.gallery_thumb_only)
+        loadOriginal.visibility = View.VISIBLE
         val burst = bursts[photo.handle]
         root.findViewById<TextView>(R.id.previewPosition).text = if (burst == null)
             activity.getString(R.string.gallery_preview_position, index + 1, photos.size)
@@ -130,28 +152,57 @@ internal class AlbumPreviewDialog(
         currentJob = scope.launch {
             try {
                 if (thumbnails.cached(photo) == null) quick.setImageBitmap(thumbnails.get(photo))
-                val file = transfers.download(photo)
-                loadingCurrent = false
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Timber.tag("USB_COMPAT").w(e, "PREVIEW_THUMB_FAILED") }
+        }
+        val cached = transfers.cached(photo)
+        if (cached != null) showOriginal(photo, cached) else showMetadata(photo)
+    }
+
+    private fun showMetadata(photo: CameraPhoto) {
+        if (!exif.needsData || metadataJob?.isActive == true) return
+        metadataJob = scope.launch {
+            try { exif.load(transfers.metadata(photo), photo.handle) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Timber.tag("USB_COMPAT").w(e, "PREVIEW_EXIF_FAILED handle=0x%08x", photo.handle) }
+        }
+    }
+
+    private fun showOriginal(photo: CameraPhoto, cached: File? = null) {
+        if (loadingCurrent || originalLoaded) return
+        currentJob?.cancel(); metadataJob?.cancel()
+        val startedAt = System.nanoTime()
+        loadingCurrent = true
+        loadOriginal.visibility = View.GONE
+        loading.text = activity.getString(R.string.gallery_preview_loading, 0)
+        currentJob = scope.launch {
+            try {
+                val file = cached ?: transfers.download(photo)
                 original.setOnImageEventListener(object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
-                    override fun onImageLoaded() { quick.visibility = View.GONE; loading.visibility = View.GONE }
-                    override fun onImageLoadError(e: Exception) { loading.setText(R.string.gallery_preview_failed) }
+                    override fun onImageLoaded() {
+                        originalLoaded = true; loadingCurrent = false
+                        quick.visibility = View.GONE; loading.visibility = View.GONE
+                        if (requestedZoom > 1.12f) original.setScaleAndCenter(original.minScale * requestedZoom,
+                            PointF(original.sWidth / 2f, original.sHeight / 2f))
+                        Timber.tag("USB_COMPAT").i("GALLERY_PREVIEW_READY handle=0x%08x elapsedMs=%d cached=%b",
+                            photo.handle, (System.nanoTime() - startedAt) / 1_000_000, cached != null)
+                    }
+                    override fun onImageLoadError(e: Exception) { originalFailed() }
                 })
                 original.setImage(ImageSource.uri(file.absolutePath))
-                Timber.tag("USB_COMPAT").i("GALLERY_PREVIEW handle=0x%08x bytes=%d", photo.handle, file.length())
-                if (adjacent != null) prefetchJob = scope.launch {
-                    try {
-                        val next = transfers.download(adjacent)
-                        Timber.tag("USB_COMPAT").i("GALLERY_PREFETCH handle=0x%08x bytes=%d", adjacent.handle, next.length())
-                    } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { Timber.tag("USB_COMPAT").w(e, "GALLERY_PREFETCH_FAILED handle=0x%08x", adjacent.handle) }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                loading.setText(R.string.gallery_preview_failed)
+                exif.load(file, photo.handle)
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                originalFailed()
                 Timber.tag("USB_COMPAT").w(e, "GALLERY_PREVIEW_FAILED handle=0x%08x", photo.handle)
             }
         }
+    }
+
+    private fun originalFailed() {
+        loadingCurrent = false
+        loadOriginal.visibility = View.VISIBLE
+        loading.setText(R.string.gallery_preview_failed)
     }
 
     fun close() { dialog.dismiss() }

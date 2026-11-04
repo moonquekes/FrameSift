@@ -98,6 +98,7 @@ dependencies {
     implementation libs.androidx.viewpager2
     implementation libs.photoview
     implementation libs.subsampling.scale.image
+    implementation libs.androidx.exifinterface
 
 }
 kotlin {

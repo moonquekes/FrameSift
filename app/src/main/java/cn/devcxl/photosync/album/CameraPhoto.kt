@@ -46,23 +46,25 @@ internal fun sortPhotos(photos: List<CameraPhoto>, sort: AlbumSort): List<Camera
 }
 
 /** A time/file-sequence heuristic, deliberately labeled as a candidate rather than proven burst metadata. */
-internal fun burstCandidates(photos: List<CameraPhoto>): List<List<CameraPhoto>> {
+internal fun burstCandidates(photos: List<CameraPhoto>, settings: BurstSettings = BurstSettings()): List<List<CameraPhoto>> {
     val groups = mutableListOf<MutableList<CameraPhoto>>()
     for (photo in sortPhotos(photos, AlbumSort.OLDEST)) {
         val previous = groups.lastOrNull()?.lastOrNull()
         val closeInTime = previous != null && previous.timestamp > 0 && photo.timestamp > 0 &&
-            photo.day == previous.day && photo.timestamp - previous.timestamp in 0..1000
+            photo.day == previous.day && photo.timestamp - previous.timestamp in 0..settings.maxGapSeconds * 1000L
         val consecutive = previous?.fileSequence?.let { photo.fileSequence == it + 1 } == true
-        if (closeInTime && consecutive) groups.last().add(photo) else groups.add(mutableListOf(photo))
+        if (closeInTime && (consecutive || !settings.requireConsecutive)) groups.last().add(photo)
+        else groups.add(mutableListOf(photo))
     }
-    return groups.flatMap { group -> if (group.size >= 3) listOf(group) else group.map { listOf(it) } }
+    return groups.flatMap { group -> if (group.size >= settings.minimumPhotos) listOf(group) else group.map { listOf(it) } }
 }
 
 internal fun buildAlbumTiles(
-    photos: List<CameraPhoto>, sort: AlbumSort, date: String?, stackBursts: Boolean, collapsedDays: Set<String> = emptySet()
+    photos: List<CameraPhoto>, sort: AlbumSort, date: String?, stackBursts: Boolean,
+    collapsedDays: Set<String> = emptySet(), burstSettings: BurstSettings = BurstSettings()
 ): List<AlbumTile> {
     val filtered = photos.filter { date == null || it.day == date }
-    val stacks = if (stackBursts) burstCandidates(filtered) else filtered.map { listOf(it) }
+    val stacks = if (stackBursts) burstCandidates(filtered, burstSettings) else filtered.map { listOf(it) }
     val order = sortPhotos(filtered, sort).mapIndexed { index, photo -> photo.handle to index }.toMap()
     val sorted = stacks.map { it.sortedBy { photo -> order[photo.handle] ?: Int.MAX_VALUE } }
         .sortedBy { order[it.first().handle] ?: Int.MAX_VALUE }

@@ -1,0 +1,10 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:padding="24dp">
+    <TextView android:id="@+id/burstGapLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/gallery_text" android:textSize="15sp"/>
+    <SeekBar android:id="@+id/burstGap" android:layout_width="match_parent" android:layout_height="48dp" android:max="5"/>
+    <TextView android:id="@+id/burstMinimumLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/gallery_text" android:textSize="15sp"/>
+    <SeekBar android:id="@+id/burstMinimum" android:layout_width="match_parent" android:layout_height="48dp" android:max="8"/>
+    <Switch android:id="@+id/burstConsecutive" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/gallery_burst_consecutive" android:textColor="@color/gallery_text" android:textSize="14sp"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/gallery_burst_settings_help" android:textColor="@color/gallery_muted" android:textSize="12sp"/>
+</LinearLayout>

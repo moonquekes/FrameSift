@@ -447,12 +447,15 @@ open class BaselineInitiator : NameFactory, Runnable {
     }
 
     @Throws(PTPException::class)
-    fun transactUnsync(command: Command, data: Data?): Response {
+    fun transactUnsync(command: Command, data: Data?, readBufferBytes: Int = inMaxPS): Response {
+        require(readBufferBytes in inMaxPS..(16 * 1024))
         val traceStart = System.nanoTime()
+        val timing = UsbReadTiming(command.getCode())
         val traceOperation = command.getCode() in setOf(
             Command.GetDeviceInfo, Command.OpenSession, Command.CloseSession, Command.GetStorageIDs,
             Command.GetStorageInfo, Command.GetObjectHandles, Command.GetObjectInfo, Command.GetThumb,
-            Command.SONY_SDIOCOMMAND, Command.GetPartialObject
+            Command.SONY_SDIOCOMMAND, Command.GetPartialObject, Command.MtpGetObjectPropsSupported,
+            Command.MtpGetObjectPropValue
         )
         if (traceOperation) {
             Timber.tag("USB_COMPAT").i(
@@ -489,7 +492,9 @@ open class BaselineInitiator : NameFactory, Runnable {
         if (TRACE) {
             System.err.println(command.toString())
         }
-        var lenC = mConnection!!.bulkTransfer(epOut!!, command.data, command.length, DEFAULT_TIMEOUT)
+        var lenC = timing.measure(UsbReadTiming.Phase.COMMAND) {
+            mConnection!!.bulkTransfer(epOut!!, command.data, command.length, DEFAULT_TIMEOUT)
+        }
         Timber.d("Command %s bytes sent %d", Command._getOpcodeString(command.getCode()), lenC)
 
         if ((command.length % epOut!!.maxPacketSize) == 0) {
@@ -520,13 +525,14 @@ open class BaselineInitiator : NameFactory, Runnable {
                 }
 
             } else {
-                val readBuffer = ByteArray(inMaxPS)
+                val readBuffer = ByteArray(readBufferBytes)
                 var readLen = 0
-                readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, inMaxPS,
-                    DEFAULT_TIMEOUT)
+                readLen = timing.measure(UsbReadTiming.Phase.FIRST_READ) {
+                    mConnection!!.bulkTransfer(epIn!!, readBuffer, readBufferBytes, DEFAULT_TIMEOUT)
+                }
                 if (readLen == 0) {
                     Timber.d("rainx note: 有的时候，端点会返回空包，这个时候需要再次发送请求 ")
-                    readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, inMaxPS, DEFAULT_TIMEOUT)
+                    readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, readBufferBytes, DEFAULT_TIMEOUT)
                 }
                 data.data = readBuffer
                 data.length = readLen
@@ -534,7 +540,7 @@ open class BaselineInitiator : NameFactory, Runnable {
                     || data.getCode() != command.getCode()
                     || data.getXID() != command.getXID()) {
                     if (data.getLength() == 0) {
-                        readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, inMaxPS,
+                        readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, readBufferBytes,
                             DEFAULT_TIMEOUT)
                         data.data = readBuffer
                         data.length = readLen
@@ -553,9 +559,11 @@ open class BaselineInitiator : NameFactory, Runnable {
 
                     var remaining = totalLen - readLen
                     while (remaining > 0) {
-                        val toRead = if (remaining > inMaxPS) inMaxPS else remaining
-                        readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, toRead,
-                            DEFAULT_TIMEOUT)
+                        val toRead = minOf(remaining, readBufferBytes)
+                        timing.bodyCalls++
+                        readLen = timing.measure(UsbReadTiming.Phase.BODY_READ) {
+                            mConnection!!.bulkTransfer(epIn!!, readBuffer, toRead, DEFAULT_TIMEOUT)
+                        }
                         dataStream.write(readBuffer, 0, readLen)
                         remaining -= readLen
                     }
@@ -563,13 +571,15 @@ open class BaselineInitiator : NameFactory, Runnable {
                     data.data = dataStream.toByteArray()
                     data.length = data.length
                 }
-                data.parse()
+                timing.measure(UsbReadTiming.Phase.PARSE) { data.parse() }
             }
         }
 
         val buf = ByteArray(inMaxPS)
         Timber.d("read response")
-        var len = mConnection!!.bulkTransfer(epIn!!, buf, inMaxPS, DEFAULT_TIMEOUT)
+        var len = timing.measure(UsbReadTiming.Phase.RESPONSE) {
+            mConnection!!.bulkTransfer(epIn!!, buf, inMaxPS, DEFAULT_TIMEOUT)
+        }
         Timber.d("received data bytes: $len")
 
         if (len == 0) {
@@ -589,6 +599,7 @@ open class BaselineInitiator : NameFactory, Runnable {
                 (System.nanoTime() - traceStart) / 1_000_000
             )
         }
+        if (traceOperation) timing.report((data?.getLength() ?: Container.HDR_LEN) - Container.HDR_LEN)
         return response
     }
 
@@ -822,6 +833,7 @@ open class BaselineInitiator : NameFactory, Runnable {
 
         synchronized(session) {
             val startDownloadAt = System.currentTimeMillis()
+            val timing = UsbReadTiming(Command.GetObject)
             val command = Command(Command.GetObject, session, objectHandle)
             if (!session.isActive())
                 throw IllegalStateException("no session")
@@ -832,7 +844,9 @@ open class BaselineInitiator : NameFactory, Runnable {
 
             var response: Response
             var abort = true
-            var lenC = mConnection!!.bulkTransfer(epOut!!, command.data, command.length, DEFAULT_TIMEOUT)
+            var lenC = timing.measure(UsbReadTiming.Phase.COMMAND) {
+                mConnection!!.bulkTransfer(epOut!!, command.data, command.length, DEFAULT_TIMEOUT)
+            }
 
             if ((command.length % epOut!!.maxPacketSize) == 0) {
                 lenC = mConnection!!.bulkTransfer(epOut!!, command.data, 0, DEFAULT_TIMEOUT)
@@ -842,7 +856,9 @@ open class BaselineInitiator : NameFactory, Runnable {
             val readBuffer = ensureImportBuffer(READ_BUF_SIZE)
             var readLen = 0
             val READ_TIMEOUT_MS = Math.max(DEFAULT_TIMEOUT, 15000)
-            readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, READ_BUF_SIZE, READ_TIMEOUT_MS)
+            readLen = timing.measure(UsbReadTiming.Phase.FIRST_READ) {
+                mConnection!!.bulkTransfer(epIn!!, readBuffer, READ_BUF_SIZE, READ_TIMEOUT_MS)
+            }
             Timber.tag("USB_COMPAT").i(
                 "GetObject FIRST_READ handle=0x%08x requestedBytes=%d bytes=%d", objectHandle, READ_BUF_SIZE, readLen
             )
@@ -891,7 +907,9 @@ open class BaselineInitiator : NameFactory, Runnable {
             var nextReportAt: Long = PROGRESS_STEP.toLong()
 
             if (initialDataLength > 0) {
-                outputStream.write(data.data, Container.HDR_LEN, initialDataLength)
+                timing.measure(UsbReadTiming.Phase.LOCAL_WRITE) {
+                    outputStream.write(data.data, Container.HDR_LEN, initialDataLength)
+                }
                 offset += initialDataLength
                 totalWritten += initialDataLength.toLong()
                 if (totalWritten >= nextReportAt || totalWritten >= length) {
@@ -905,7 +923,10 @@ open class BaselineInitiator : NameFactory, Runnable {
             var remaining = fullLength - readLen
             while (remaining > 0) {
                 val toRead = Math.min(remaining, READ_BUF_SIZE)
-                readLen = mConnection!!.bulkTransfer(epIn!!, readBuffer, toRead, READ_TIMEOUT_MS)
+                timing.bodyCalls++
+                readLen = timing.measure(UsbReadTiming.Phase.BODY_READ) {
+                    mConnection!!.bulkTransfer(epIn!!, readBuffer, toRead, READ_TIMEOUT_MS)
+                }
                 if (readLen <= 0) {
                     val retry = mConnection!!.bulkTransfer(epIn!!, readBuffer, Math.min(remaining, READ_BUF_SIZE), READ_TIMEOUT_MS)
                     if (retry <= 0) {
@@ -918,7 +939,7 @@ open class BaselineInitiator : NameFactory, Runnable {
                     Timber.d("readLen $readLen is bigger than buffer size:$READ_BUF_SIZE")
                     readLen = READ_BUF_SIZE
                 }
-                outputStream.write(readBuffer, 0, readLen)
+                timing.measure(UsbReadTiming.Phase.LOCAL_WRITE) { outputStream.write(readBuffer, 0, readLen) }
                 remaining -= readLen
                 totalWritten += readLen.toLong()
 
@@ -929,9 +950,9 @@ open class BaselineInitiator : NameFactory, Runnable {
                     while (nextReportAt <= totalWritten) nextReportAt += PROGRESS_STEP.toLong()
                 }
             }
-            outputStream.flush()
-            outputStream.close()
-            response = readResponse()
+            timing.measure(UsbReadTiming.Phase.LOCAL_WRITE) { outputStream.flush(); outputStream.close() }
+            response = timing.measure(UsbReadTiming.Phase.RESPONSE) { readResponse() }
+            timing.report(length)
             Timber.tag("USB_COMPAT").i(
                 "GetObject END handle=0x%08x response=0x%04x expectedBytes=%d writtenBytes=%d fileBytes=%d elapsedMs=%d",
                 objectHandle, response.getCode(), length, totalWritten, outputFile.length(),
@@ -1050,9 +1071,9 @@ open class BaselineInitiator : NameFactory, Runnable {
 
     /** Reads the camera-provided thumbnail without downloading or modifying the original object. */
     @Throws(PTPException::class)
-    fun getThumb(objectHandle: Int): ByteArray = synchronized(session) {
+    fun getThumb(objectHandle: Int, readBufferBytes: Int = inMaxPS): ByteArray = synchronized(session) {
         val data = Data(this)
-        val response = transact1(Command.GetThumb, data, objectHandle)
+        val response = transactUnsync(Command(Command.GetThumb, session, objectHandle), data, readBufferBytes)
         if (response.getCode() != Response.OK) throw PTPException(response.toString())
         val payload = data.data.copyOfRange(Container.HDR_LEN, data.getLength())
         Timber.tag("USB_COMPAT").i("GetThumb handle=0x%08x bytes=%d", objectHandle, payload.size)
@@ -1061,8 +1082,34 @@ open class BaselineInitiator : NameFactory, Runnable {
 
     /** Reads only the JPEG header required for orientation, leaving the original object unchanged. */
     fun getObjectHeader(objectHandle: Int, bytes: Int = 512): ByteArray = synchronized(session) {
+        getObjectRange(objectHandle, 0, bytes)
+    }
+
+    /** Reads a bounded range. Callers must validate nonzero offsets: ZV-E10 MTP returned the file prefix. */
+    internal fun getObjectRange(
+        objectHandle: Int, offset: Int, bytes: Int, readBufferBytes: Int = inMaxPS
+    ): ByteArray = synchronized(session) {
+        require(offset >= 0 && bytes in 1..(2 * 1024 * 1024))
         val data = Data(this)
-        val response = transact3(Command.GetPartialObject, data, objectHandle, 0, bytes)
+        val command = Command(Command.GetPartialObject, session, objectHandle, offset, bytes)
+        val response = transactUnsync(command, data, readBufferBytes)
+        if (response.getCode() != Response.OK) throw PTPException(response.toString())
+        data.data.copyOfRange(Container.HDR_LEN, data.getLength())
+    }
+
+    /** Read-only capability query used by the Debug preview investigation, never by album indexing. */
+    internal fun getObjectPropertiesSupported(format: Int): IntArray = synchronized(session) {
+        val data = Data(this)
+        val response = transact1(Command.MtpGetObjectPropsSupported, data, format)
+        if (response.getCode() != Response.OK) throw PTPException(response.toString())
+        data.parse()
+        data.nextU16Array()
+    }
+
+    /** Reads one advertised MTP object property; does not use the problematic all-properties operation. */
+    internal fun getObjectPropertyValue(handle: Int, property: Int): ByteArray = synchronized(session) {
+        val data = Data(this)
+        val response = transact2(Command.MtpGetObjectPropValue, data, handle, property)
         if (response.getCode() != Response.OK) throw PTPException(response.toString())
         data.data.copyOfRange(Container.HDR_LEN, data.getLength())
     }

@@ -35,13 +35,15 @@ internal class CameraAlbumScreen(
     private val thumbnails = AlbumThumbnails(activity, controller, scope)
     private val transfers = AlbumTransfers(activity, controller, saveOriginal)
     private val menus = AlbumMenus(activity)
+    private val preferences = AlbumPreferences(activity)
+    private var burstSettings = preferences.readBurst()
     private var photos: List<CameraPhoto> = emptyList()
     private val selected = linkedSetOf<Int>()
     private val imported = mutableSetOf<Int>()
     private var sort = AlbumSort.NEWEST
     private var date: String? = null
     private val collapsedDays = mutableSetOf<String>()
-    private var mergeBursts = true
+    private var mergeBursts = preferences.mergeBursts
     private var selectionMode = false
     private var connected = false
     private var importing = false
@@ -57,7 +59,7 @@ internal class CameraAlbumScreen(
         { day -> if (!collapsedDays.add(day)) collapsedDays.remove(day); rebuild() },
         { day -> photos.filter { it.day == day }.let { it.isNotEmpty() && it.all { photo -> photo.handle in selected } } }
     )
-    private val chrome = ScrollChrome(binding.galleryChromeContainer, binding.galleryChrome, binding.galleryGrid)
+    private val chrome = ScrollChrome(binding.galleryChromeContainer, binding.galleryGrid)
 
     init {
         val grid = GridLayoutManager(activity, 3)
@@ -70,9 +72,17 @@ internal class CameraAlbumScreen(
         binding.galleryBurst.isSelected = mergeBursts
         binding.galleryBurst.setOnClickListener {
             mergeBursts = !mergeBursts
+            preferences.mergeBursts = mergeBursts
             binding.galleryBurst.isSelected = mergeBursts
             if (mergeBursts) Toast.makeText(activity, R.string.gallery_burst_explanation, Toast.LENGTH_LONG).show()
             rebuild()
+        }
+        binding.gallerySettings.setOnClickListener {
+            AlbumSettingsMenu(activity, preferences).show {
+                burstSettings = it; rebuild()
+                Timber.tag("USB_COMPAT").i("BURST_SETTINGS gapSeconds=%d minimum=%d consecutive=%b",
+                    it.maxGapSeconds, it.minimumPhotos, it.requireConsecutive)
+            }
         }
         binding.galleryDate.setOnClickListener { menus.dates(photos) { date = it; if (it != null) collapsedDays.remove(it); chrome.show(); rebuild(); binding.galleryGrid.scrollToPosition(0) } }
         binding.gallerySort.setOnClickListener { menus.sort(sort) { sort = it; chrome.show(); rebuild(); binding.galleryGrid.scrollToPosition(0) } }
@@ -91,7 +101,7 @@ internal class CameraAlbumScreen(
             is UsbPtpConnectionState.PermissionRequested -> R.string.gallery_permission
             is UsbPtpConnectionState.Connecting -> R.string.gallery_connecting
             is UsbPtpConnectionState.Disconnected -> if (state.reason == "index_failed") R.string.gallery_read_connection_failed else R.string.gallery_disconnected
-            is UsbPtpConnectionState.Error -> if (state.reason == "permission_denied") R.string.gallery_permission else R.string.gallery_read_connection_failed
+            is UsbPtpConnectionState.Error -> if (state.reason in setOf("permission_denied", "permission_required")) R.string.gallery_permission else R.string.gallery_read_connection_failed
             else -> R.string.gallery_waiting
         })
         if (connected && !wasConnected) loadIndex()
@@ -131,7 +141,7 @@ internal class CameraAlbumScreen(
                 binding.galleryEmptyTitle.setText(R.string.gallery_no_photos)
                 Timber.tag("USB_COMPAT").i(
                     "GALLERY_INDEX_COMPLETE jpeg=%d dates=%d candidates=%d", photos.size,
-                    photos.map { it.day }.distinct().size, burstCandidates(photos).count { it.size > 1 }
+                    photos.map { it.day }.distinct().size, burstCandidates(photos, burstSettings).count { it.size > 1 }
                 )
                 rebuild()
             } catch (e: CancellationException) {
@@ -150,7 +160,7 @@ internal class CameraAlbumScreen(
     )
 
     private fun rebuild() {
-        adapter.submitList(buildAlbumTiles(photos, sort, date, mergeBursts, collapsedDays))
+        adapter.submitList(buildAlbumTiles(photos, sort, date, mergeBursts, collapsedDays, burstSettings))
         binding.galleryDate.text = date?.let {
             dateLabel(it, short = true).ifBlank { activity.getString(R.string.gallery_date_unknown) } + " ▾"
         } ?: activity.getString(R.string.gallery_all_dates)
@@ -160,10 +170,10 @@ internal class CameraAlbumScreen(
         chrome.ensureVisibleAtTop()
     }
 
-    private fun thumbnail(photo: CameraPhoto, done: (Bitmap?) -> Unit) {
+    private fun thumbnail(photo: CameraPhoto, done: (Bitmap?) -> Unit): Job? {
         val cached = thumbnails.cached(photo)
-        if (cached != null) { done(cached); return }
-        scope.launch {
+        if (cached != null) { done(cached); return null }
+        return scope.launch {
             try { done(thumbnails.get(photo)) }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { done(null); Timber.tag("USB_COMPAT").w(e, "GALLERY_THUMB_FAILED handle=0x%08x", photo.handle) }
@@ -182,7 +192,7 @@ internal class CameraAlbumScreen(
 
     private fun open(members: List<CameraPhoto>) {
         if (importing) return
-        val sequence = buildPreviewSequence(photos, sort, date, members.first().handle, mergeBursts)
+        val sequence = buildPreviewSequence(photos, sort, date, members.first().handle, mergeBursts, burstSettings)
         Timber.tag("USB_COMPAT").i("GALLERY_PREVIEW_SEQUENCE total=%d initial=%d stackMembers=%d",
             sequence.photos.size, sequence.initialIndex + 1, members.size)
         preview = AlbumPreviewDialog(activity, sequence.photos, sequence.initialIndex, sequence.bursts, thumbnails, transfers,

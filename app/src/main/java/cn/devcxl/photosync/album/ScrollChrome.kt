@@ -1,78 +1,66 @@
 package cn.devcxl.photosync.album
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.ValueAnimator
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
+import timber.log.Timber
 
-/** Slides the controls away on upward browsing and restores them on downward scrolling. */
-internal class ScrollChrome(private val wrapper: ViewGroup, private val content: View, private val grid: RecyclerView) {
+/** Keeps grid bounds fixed: toolbar motion never becomes a new list scroll event. */
+internal class ScrollChrome(private val wrapper: ViewGroup, private val grid: RecyclerView) {
+    private val density = wrapper.resources.displayMetrics.density
+    private val gesture = ChromeGesture(24 * density, 18 * density)
+    private val initialPadding = grid.paddingTop
+    private var previousY = 0f
     private var expandedHeight = 0
-    private var hidden = false
-    private var travel = 0
-    private var touchY = 0f
-    private var animation: ValueAnimator? = null
-    private val density = content.resources.displayMetrics.density
+    private val layout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reserveToolbarSpace() }
     private val scrolling = object : RecyclerView.OnScrollListener() {
-        override fun onScrolled(view: RecyclerView, dx: Int, dy: Int) {
-            if (dy == 0) return
-            travel = if (travel * dy < 0) dy else travel + dy
-            if (travel > 18 * density && !hidden) setHidden(true)
-            if (travel < -10 * density && hidden) setHidden(false)
-            if (!view.canScrollVertically(-1)) show()
+        override fun onScrollStateChanged(view: RecyclerView, state: Int) {
+            if (state == RecyclerView.SCROLL_STATE_IDLE && !view.canScrollVertically(-1)) show()
         }
     }
     private val touching = object : RecyclerView.SimpleOnItemTouchListener() {
         override fun onInterceptTouchEvent(view: RecyclerView, event: MotionEvent): Boolean {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) touchY = event.y
-            if (event.actionMasked == MotionEvent.ACTION_MOVE && event.y - touchY > 12 * density && hidden) show()
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { previousY = event.rawY; gesture.beginDrag() }
+                MotionEvent.ACTION_MOVE -> {
+                    val delta = previousY - event.rawY
+                    previousY = event.rawY
+                    gesture.drag(delta, view.canScrollVertically(1) || view.canScrollVertically(-1))
+                        ?.let(::animate)
+                }
+            }
             return false
         }
     }
 
     init {
-        content.post { expandedHeight = content.height }
+        wrapper.addOnLayoutChangeListener(layout)
+        wrapper.post { reserveToolbarSpace() }
         grid.addOnScrollListener(scrolling)
         grid.addOnItemTouchListener(touching)
     }
 
-    fun show() { setHidden(false) }
-
+    fun show() { if (gesture.hidden) { gesture.show(); animate(false) } }
     fun ensureVisibleAtTop() { grid.post { if (!grid.canScrollVertically(-1)) show() } }
 
-    private fun setHidden(value: Boolean) {
-        if (hidden == value) return
-        if (!hidden && content.height > 0) expandedHeight = content.height
-        if (expandedHeight == 0) return
-        hidden = value
-        travel = 0
-        animation?.cancel()
-        content.layoutParams = content.layoutParams.apply { height = expandedHeight }
-        val target = if (value) 0 else expandedHeight
-        animation = ValueAnimator.ofInt(wrapper.height, target).apply {
-            duration = 180
-            addUpdateListener { animator ->
-                val height = animator.animatedValue as Int
-                wrapper.layoutParams = wrapper.layoutParams.apply { this.height = height }
-                content.translationY = (height - expandedHeight).toFloat()
-            }
-            addListener(object : AnimatorListenerAdapter() {
-                private var cancelled = false
-                override fun onAnimationCancel(animation: Animator) { cancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!cancelled && !value) {
-                        wrapper.layoutParams = wrapper.layoutParams.apply { height = ViewGroup.LayoutParams.WRAP_CONTENT }
-                        content.layoutParams = content.layoutParams.apply { height = ViewGroup.LayoutParams.WRAP_CONTENT }
-                        content.translationY = 0f
-                    }
-                }
-            })
-            start()
-        }
+    private fun reserveToolbarSpace() {
+        if (wrapper.height <= 0 || wrapper.height == expandedHeight) return
+        expandedHeight = wrapper.height
+        grid.setPadding(grid.paddingLeft, initialPadding + expandedHeight, grid.paddingRight, grid.paddingBottom)
+        if (gesture.hidden) wrapper.translationY = -expandedHeight.toFloat()
     }
 
-    fun close() { animation?.cancel(); grid.removeOnScrollListener(scrolling); grid.removeOnItemTouchListener(touching) }
+    private fun animate(hidden: Boolean) {
+        wrapper.animate().cancel()
+        wrapper.animate().translationY(if (hidden) -expandedHeight.toFloat() else 0f).setDuration(180).start()
+        Timber.tag("USB_COMPAT").i("GALLERY_CHROME hidden=%b", hidden)
+    }
+
+    fun close() {
+        wrapper.animate().cancel()
+        wrapper.removeOnLayoutChangeListener(layout)
+        grid.removeOnScrollListener(scrolling)
+        grid.removeOnItemTouchListener(touching)
+    }
 }

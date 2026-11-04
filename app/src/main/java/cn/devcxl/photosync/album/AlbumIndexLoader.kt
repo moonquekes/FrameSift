@@ -36,10 +36,12 @@ internal class AlbumIndexLoader(private val context: Context, private val contro
         update(photos.toList(), processed.size, handles.size, pending.isEmpty())
         for ((index, page) in pending.chunked(8).withIndex()) {
             currentCoroutineContext().ensureActive()
-            photos.addAll(controller.withConnectedCamera { camera ->
-                page.map { camera.getObjectInfo(it) }.map { CameraPhoto.from(it).copy(cacheToken = cache.namespace(generation)) }
-                    .filter { it.name.endsWith(".jpg", true) || it.name.endsWith(".jpeg", true) }
-            })
+            for (handle in page) {
+                currentCoroutineContext().ensureActive()
+                val photo = controller.withConnectedCamera { CameraPhoto.from(it.getObjectInfo(handle)) }
+                    .copy(cacheToken = cache.namespace(generation))
+                if (photo.name.endsWith(".jpg", true) || photo.name.endsWith(".jpeg", true)) photos.add(photo)
+            }
             processed.addAll(page)
             val complete = processed.size == handles.size
             update(photos.toList(), processed.size, handles.size, complete)
