@@ -4,7 +4,7 @@
 
 ## 开始使用
 
-1. 安装本地 `artifacts/framesift-mtp-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
+1. 从 [GitHub Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 下载并安装 `framesift-mtp-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。本地已有安装包位于 `artifacts/`。
 2. 在相机上关闭「PC Remote」和「智能手机连接」，将「设置 → USB 连接」设为「MTP」，然后用数据线连接手机。
 3. 打开 PhotoSync。如果 Android 提示允许 PhotoSync 访问相机 USB，选择允许。出现「SONY ZV-E10 · 已连接」后即可浏览照片。
 4. 点按查看大图，长按进入多选。点导入后可查看读取、保存和校验进度。原始 JPEG 保存到手机图库的 `Pictures/PhotoSync`。
@@ -19,10 +19,12 @@
 
 ## 分支和文档
 
+两个版本在同一个 [Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 中分别提供 APK。当前为 **debug 预览版**，不是正式签名发行版；两者包名相同，不能作为两个独立应用同时安装。覆盖安装要求签名一致，卸载会清除应用数据。源码提交与 SHA-256 见[发布说明](docs/RELEASES.md)。
+
 | 分支 | 相机连接方式 |
 | --- | --- |
-| `mtp` | 通过 USB MTP/PTP 会话浏览相机对象。 |
-| `mass` | Android 挂载相机 SD 卡，经 `DCIM` 只读授权读取 JPEG 和内嵌预览。 |
+| [`mtp`](https://github.com/moonquekes/FrameSift/tree/mtp) | 通过 USB MTP/PTP 会话浏览相机对象。 |
+| [`mass`](https://github.com/moonquekes/FrameSift/tree/mass) | Android 挂载相机 SD 卡，经 `DCIM` 只读授权读取 JPEG 和内嵌预览。 |
 
 [构建与工具链](docs/BUILD.md) · [真机验证与 APK 校验](docs/VALIDATION.md) · [上游来源与改动](docs/UPSTREAM.md)
 
