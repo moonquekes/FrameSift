@@ -1,106 +1,29 @@
-<div align="center">
-  <img width="128" height="128" src="./docs/logo.svg">
-</div>
+# PhotoSync · 海量存储版
 
-<h1 align="center">PhotoSync</h1>
+把 Sony ZV-E10 一代接到荣耀 Magic7 上，直接浏览 SD 卡里的 JPEG，挑出想要的照片，再把原文件导入手机图库。此分支使用 USB 海量存储（MSC），适合拍完一整天后集中挑片。
 
-<div align="center">
+## 开始使用
 
-![Android](https://img.shields.io/badge/Android-7.0%20%28API%2024%29-brightgreen?style=flat-square&logo=android)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple?style=flat-square&logo=kotlin&logoColor=purple)
-![Gradle](https://img.shields.io/badge/Gradle-8.13-yellow?style=flat-square&logo=gradle)
-![NDK](https://img.shields.io/badge/NDK-29.0.14033849-red?style=flat-square&logo=android-ndk)
-![CI](https://img.shields.io/github/actions/workflow/status/devcxl/PhotoSync/release.yml?style=flat-square&logo=github-actions)
-![Stars](https://img.shields.io/github/stars/devcxl/PhotoSync?style=flat-square&logo=github)
+1. 安装本地 `artifacts/photosync-mass-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
+2. 在相机上关闭「PC Remote」和「智能手机连接」，将「设置 → USB 连接」设为「海量存储器」，然后用数据线连接手机。
+3. 在 PhotoSync 点「选择相机照片文件夹」。在系统文件夹选择器中打开相机 SD 卡上的 `DCIM`，点「使用这个文件夹」并允许。同一存储卷重新连接时会复用授权。
+4. 系统提示照片相关权限时，允许读取原始照片元数据，应用才能保留 JPEG 已有的 EXIF 定位字段。应用获得的 `DCIM` 目录授权为只读。
+5. 点按查看大图，长按进入多选。点导入后可查看读取、保存和校验进度。原始 JPEG 保存到手机图库的 `Pictures/PhotoSync`。
 
-[English version](./README.en.md) · [Русская версия](./README.ru.md)
+## 挑片方式
 
-</div>
+- 相册只显示 JPEG，按拍摄日期分组，默认最新优先。日期组可以折叠和整组选中。
+- 普通翻阅先显示小图，再显示相机 JPEG 内嵌的 1616×1080 预览。放大到中图像素不足、主动查看原图或导入时才读取完整 JPEG。松手换原图时保留当前倍率和画面中心。
+- 设置分为「连拍分组」和「拍摄参数」。连拍候选默认要求相邻间隔不超过 1 秒、至少 3 张且 DSC 序号连续。大图 EXIF 默认显示焦距、镜头、ISO、光圈和快门。
+- 新拍的照片可通过重新连接或点刷新加入列表。更换 SD 卡后，若系统识别为新存储卷，需要重新选择 `DCIM`。
 
----
+## 分支和文档
 
-**本地验证版**适用于 Sony ZV-E10 一代与荣耀 Magic7 的 USB 海量存储挑片。相机设置、安装、Windows 工具链和回退步骤见 [海量存储版 README](./README-MASS-STORAGE.md)。
+| 分支 | 相机连接方式 |
+| --- | --- |
+| `mass` | Android 挂载相机 SD 卡，经 `DCIM` 只读授权读取 JPEG 和内嵌预览。 |
+| `mtp` | 通过 USB MTP/PTP 会话浏览相机对象。 |
 
-PhotoSync 是一款 Android 相机伴侣应用，专为摄影师和影像爱好者设计。通过 USB PTP 协议直连相机，无需 Wi-Fi、无需电脑客户端，即可在手机/平板上即拍即传、浏览缩放预览、导出或删除 RAW/JPEG 照片。
+[构建与工具链](docs/BUILD.md) · [真机验证与 APK 校验](docs/VALIDATION.md) · [上游来源与改动](docs/UPSTREAM.md)
 
-## 功能亮点
-
-- **USB PTP 直连** — 基于 USB PTP 协议直连相机，即插即用，无需网络
-- **即拍即传** — 相机拍摄后自动传输至本机，实时浏览
-- **RAW 解码** — LibRaw + lcms2 色彩管理，支持 ARW、CR3、NEF、DNG、RAF 等 20+ 格式
-- **流畅阅片** — 缩略图优先加载，JPEG 分块渲染，支持双指缩放和平移
-- **无损导出** — JPEG 直接拷贝至系统相册，RAW 解码后保存，无压缩、无云端上传
-- **照片管理** — 支持从本机删除照片
-
-## 适用场景
-
-- 外出拍摄时即拍即看，不耗相机屏幕电量
-- 现场将 RAW/JPEG 快速导入平板或大屏设备查看
-- 批量导出照片到本地，无压缩、无云端上传
-
-## 快速上手
-
-1. 用 USB 线将相机连接到手机/平板
-2. 在相机上选择"PC 连接"或"PTP/MTP"模式
-3. 打开 PhotoSync，自动识别设备，开始浏览和导出
-
----
-
-## 技术栈
-
-| 类别 | 技术 |
-|------|------|
-| 语言 | Kotlin 2.0 / C++ / JNI |
-| UI | XML + ViewBinding |
-| 异步 | Coroutines + Flow |
-| 数据库 | Room |
-| 图像处理 | LibRaw 0.21.4 + lcms2 2.18 |
-| 架构 | MVVM + Clean Architecture |
-| 最低版本 | Android 7.0（API 24） |
-
-## 支持的 RAW 格式
-
-Sony (ARW/SR2) · Canon (CR2/CR3) · Nikon (NEF/NRW) · Fujifilm (RAF) · Panasonic (RW2) · Adobe (DNG) · Olympus (ORF) · Samsung (SRW) · Pentax (PEF) · Leica (RWL) · Hasselblad (3FR) · 以及更多
-
-## 项目结构
-
-```
-PhotoSync/
-├── app/                    # 主应用模块
-│   └── src/main/java/cn/devcxl/photosync/
-│       ├── activity/       # Activity、ViewModel
-│       ├── adapter/        # RecyclerView / ViewPager 适配器
-│       ├── data/           # Room 数据库、DAO、Entity
-│       ├── ptp/            # USB PTP 协议实现与连接管理
-│       ├── receiver/       # USB 广播接收器
-│       └── utils/          # 工具类
-├── libraw/                 # Native 库模块（LibRaw + lcms2）
-│   └── src/main/
-│       ├── cpp/            # JNI 桥接 + CMake 构建
-│       └── java/           # RawWrapper Kotlin 封装
-└── gradle/
-    └── libs.versions.toml  # 依赖版本管理
-```
-
-## 构建
-
-```bash
-# 前置条件：Android SDK、NDK、CMake 3.22+
-# 首次克隆需初始化子模块
-git submodule update --init --recursive
-
-# Debug APK
-./gradlew assembleDebug
-
-# Release AAB (Google Play)
-./gradlew bundleRelease
-
-# 运行单元测试
-./gradlew testDebugUnitTest
-
-# Lint 检查
-./gradlew lintDebug
-```
-
-生成的 Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
-Release AAB 位于 `app/build/outputs/bundle/release/app-release.aab`。
+项目基于 [devcxl/PhotoSync](https://github.com/devcxl/PhotoSync)。

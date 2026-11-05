@@ -32,3 +32,8 @@ local.properties
 /.idea/copilot.data.migration.*.xml
 # Kotlin incremental compilation state
 .kotlin/
+
+# Local APKs and signing material
+/artifacts/
+*.jks
+*.keystore
