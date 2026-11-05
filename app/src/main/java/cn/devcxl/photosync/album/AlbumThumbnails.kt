@@ -21,7 +21,8 @@ import timber.log.Timber
 
 /** Cancel offscreen work while safely finishing an already-started camera transaction. */
 internal class AlbumThumbnails(
-    context: Context, private val controller: UsbPtpConnectionController, private val scope: CoroutineScope
+    context: Context, private val controller: UsbPtpConnectionController, private val scope: CoroutineScope,
+    private val files: MassStorageFiles = MassStorageFiles(context, controller)
 ) {
     private val directory = File(context.cacheDir, "camera-thumbnails-v1").apply { mkdirs() }
     private val memory = object : LruCache<String, Bitmap>(24 * 1024) {
@@ -58,6 +59,9 @@ internal class AlbumThumbnails(
         val cachedOrientation = readOrientation(direction)
         val disk = file.exists() && cachedOrientation != null
         val (bytes, orientation) = if (disk) file.readBytes() to requireNotNull(cachedOrientation)
+        else if (photo.documentUri != null) files.thumbnail(photo).also {
+            file.writeBytes(it.first); direction.writeText(it.second.toString())
+        }
         else cameraReads.withPermit {
             // Only one visible thumbnail enters the camera queue; raw bytes + orientation stay together.
             controller.withConnectedCamera(CameraReadPriority.VISIBLE_THUMBNAIL, "thumb:${photo.identity}") { camera ->
@@ -79,7 +83,8 @@ internal class AlbumThumbnails(
         return orient(bitmap, orientation).also {
             memory.put(photo.identity, it)
             Timber.tag("USB_COMPAT").i("THUMB_READY handle=0x%08x source=%s elapsedMs=%d",
-                photo.handle, if (disk) "disk" else "camera", (System.nanoTime() - started) / 1_000_000)
+                photo.handle, if (disk) "disk" else if (photo.documentUri != null) "file" else "camera",
+                (System.nanoTime() - started) / 1_000_000)
         }
     }
 

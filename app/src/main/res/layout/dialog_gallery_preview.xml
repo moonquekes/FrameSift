@@ -1,5 +1,11 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/gallery_background">
     <com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView android:id="@+id/previewOriginal" android:layout_width="match_parent" android:layout_height="match_parent"/>
+    <com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
+        android:id="@+id/previewMedium"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/gallery_background"
+        android:visibility="gone"/>
     <ImageView android:id="@+id/previewQuick" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:contentDescription="@string/gallery_photo"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="72dp" android:layout_gravity="top" android:gravity="center_vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:background="#B8101618">
         <TextView android:id="@+id/previewBack" android:layout_width="64dp" android:layout_height="48dp" android:gravity="center_vertical" android:text="@string/gallery_back" android:textSize="14sp" android:textColor="@color/gallery_text" android:clickable="true" android:focusable="true"/>

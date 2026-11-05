@@ -224,6 +224,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        albumScreen?.onResume()
         connectionController.scanAndConnectIfPossible(requestPermission = false)
     }
 

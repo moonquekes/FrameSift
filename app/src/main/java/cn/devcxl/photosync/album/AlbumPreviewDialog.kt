@@ -15,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import cn.devcxl.photosync.R
+import cn.devcxl.photosync.ptp.manager.CameraReadPriority
 import com.davemorrissey.labs.subscaleview.ImageSource
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import kotlinx.coroutines.CancellationException
@@ -48,6 +49,7 @@ internal class AlbumPreviewDialog(
     }
     private val root = activity.layoutInflater.inflate(R.layout.dialog_gallery_preview, null)
     private val original: SubsamplingScaleImageView = root.findViewById(R.id.previewOriginal)
+    private val mediumView: SubsamplingScaleImageView = root.findViewById(R.id.previewMedium)
     private val quick: ImageView = root.findViewById(R.id.previewQuick)
     private val loading: TextView = root.findViewById(R.id.previewLoading)
     private val pick: TextView = root.findViewById(R.id.previewPick)
@@ -58,7 +60,12 @@ internal class AlbumPreviewDialog(
     private var metadataJob: Job? = null
     private var loadingCurrent = false
     private var originalLoaded = false
-    private var requestedZoom = 1f
+    private var mediumLoaded = false
+    private var neighborJob: Job? = null
+    private var direction = 1
+    private var quickZoom = 1f
+    private var touchInProgress = false
+    private var multiTouch = false
 
     fun show() {
         dialog.setContentView(root)
@@ -77,8 +84,22 @@ internal class AlbumPreviewDialog(
         pick.setOnClickListener { toggle(photos[index]); renderSelection() }
         loadOriginal.setOnClickListener { showOriginal(photos[index]) }
         original.orientation = SubsamplingScaleImageView.ORIENTATION_USE_EXIF
+        mediumView.setOnStateChangedListener(object : SubsamplingScaleImageView.OnStateChangedListener {
+            override fun onCenterChanged(newCenter: PointF?, origin: Int) = Unit
+            override fun onScaleChanged(newScale: Float, origin: Int) {
+                // Above one screen pixel per preview pixel, a user zoom benefits from the original.
+                if (mediumLoaded && origin == SubsamplingScaleImageView.ORIGIN_TOUCH && newScale > 1.05f) {
+                    showOriginal(photos[index])
+                }
+            }
+        })
         bindGestures()
-        dialog.setOnDismissListener { scope.cancel(); original.recycle(); transfers.clearPins() }
+        dialog.setOnDismissListener {
+            scope.cancel()
+            original.recycle()
+            mediumView.recycle()
+            transfers.clearPins()
+        }
         dialog.show()
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         dialog.window?.let(AlbumSystemBars::show)
@@ -88,23 +109,50 @@ internal class AlbumPreviewDialog(
     private fun bindGestures() {
         val gestures = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(first: MotionEvent?, last: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (first == null || abs(velocityX) < abs(velocityY) || original.scale > original.minScale * 1.15f) return false
+                val image = if (mediumLoaded) mediumView else original
+                if (first == null || multiTouch || abs(velocityX) < abs(velocityY)) return false
+                if (image.scale > image.minScale * 1.15f) return false
                 if (abs(last.x - first.x) < 80 * activity.resources.displayMetrics.density) return false
                 move(if (last.x < first.x) 1 else -1)
                 return true
             }
         })
         val zoom = ScaleGestureDetector(activity, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean { requestedZoom = 1f; return true }
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean { quickZoom = 1f; return true }
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                requestedZoom = (requestedZoom * detector.scaleFactor).coerceIn(1f, 4f)
-                if (requestedZoom > 1.12f) showOriginal(photos[index])
+                quickZoom = (quickZoom * detector.scaleFactor).coerceIn(1f, 4f)
+                if (quickZoom > 1.12f) showOriginal(photos[index])
                 return true
             }
         })
-        original.setOnTouchListener { _, event -> gestures.onTouchEvent(event) }
+        val imageTouch = View.OnTouchListener { _, event ->
+            trackPreviewTouch(event)
+            gestures.onTouchEvent(event)
+        }
+        original.setOnTouchListener(imageTouch)
+        mediumView.setOnTouchListener(imageTouch)
         quick.isClickable = true
-        quick.setOnTouchListener { _, event -> zoom.onTouchEvent(event); gestures.onTouchEvent(event); true }
+        quick.setOnTouchListener { _, event ->
+            trackPreviewTouch(event)
+            zoom.onTouchEvent(event)
+            gestures.onTouchEvent(event)
+            true
+        }
+    }
+
+    private fun trackPreviewTouch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchInProgress = true
+                multiTouch = false
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> multiTouch = true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                touchInProgress = false
+                // Let the current viewer finish handling the event before reading its viewport.
+                original.post { revealOriginal() }
+            }
+        }
     }
 
     fun onProgress(handle: Int, total: Long, done: Long) {
@@ -119,6 +167,7 @@ internal class AlbumPreviewDialog(
         val next = (index + delta).coerceIn(0, photos.lastIndex)
         if (next == index) return
         index = next
+        direction = if (delta < 0) -1 else 1
         render()
     }
 
@@ -130,13 +179,21 @@ internal class AlbumPreviewDialog(
     private fun render() {
         currentJob?.cancel()
         metadataJob?.cancel()
+        neighborJob?.cancel()
+        original.setOnImageEventListener(null)
+        mediumView.setOnImageEventListener(null)
         original.recycle()
+        mediumView.recycle()
+        mediumView.visibility = View.GONE
         exif.clear()
         val photo = photos[index]
         transfers.pin(listOf(photo))
         loadingCurrent = false
         originalLoaded = false
-        requestedZoom = 1f
+        mediumLoaded = false
+        quickZoom = 1f
+        touchInProgress = false
+        multiTouch = false
         quick.visibility = View.VISIBLE
         quick.setImageBitmap(thumbnails.cached(photo))
         loading.visibility = View.VISIBLE
@@ -152,6 +209,7 @@ internal class AlbumPreviewDialog(
         currentJob = scope.launch {
             try {
                 if (thumbnails.cached(photo) == null) quick.setImageBitmap(thumbnails.get(photo))
+                if (photo.documentUri != null && transfers.cached(photo) == null) showMedium(photo)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { Timber.tag("USB_COMPAT").w(e, "PREVIEW_THUMB_FAILED") }
         }
@@ -173,21 +231,23 @@ internal class AlbumPreviewDialog(
         currentJob?.cancel(); metadataJob?.cancel()
         val startedAt = System.nanoTime()
         loadingCurrent = true
+        if (!mediumLoaded) mediumView.visibility = View.GONE
         loadOriginal.visibility = View.GONE
+        loading.visibility = View.VISIBLE
         loading.text = activity.getString(R.string.gallery_preview_loading, 0)
         currentJob = scope.launch {
             try {
                 val file = cached ?: transfers.download(photo)
+                original.orientation = SubsamplingScaleImageView.ORIENTATION_USE_EXIF
                 original.setOnImageEventListener(object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
                     override fun onImageLoaded() {
-                        originalLoaded = true; loadingCurrent = false
-                        quick.visibility = View.GONE; loading.visibility = View.GONE
-                        if (requestedZoom > 1.12f) original.setScaleAndCenter(original.minScale * requestedZoom,
-                            PointF(original.sWidth / 2f, original.sHeight / 2f))
+                        if (photos[index].identity != photo.identity) return
                         Timber.tag("USB_COMPAT").i("GALLERY_PREVIEW_READY handle=0x%08x elapsedMs=%d cached=%b",
                             photo.handle, (System.nanoTime() - startedAt) / 1_000_000, cached != null)
+                        revealOriginal()
                     }
                     override fun onImageLoadError(e: Exception) { originalFailed() }
+                    override fun onTileLoadError(e: Exception) { if (!originalLoaded) originalFailed() }
                 })
                 original.setImage(ImageSource.uri(file.absolutePath))
                 exif.load(file, photo.handle)
@@ -199,10 +259,59 @@ internal class AlbumPreviewDialog(
         }
     }
 
+    private fun revealOriginal() {
+        if (!dialog.isShowing || !loadingCurrent || !original.isImageLoaded || touchInProgress) return
+        original.restorePreviewViewport(mediumView.takeIf { mediumLoaded }, quickZoom)
+        originalLoaded = true
+        loadingCurrent = false
+        mediumLoaded = false
+        quick.visibility = View.GONE
+        mediumView.visibility = View.GONE
+        mediumView.recycle()
+        loading.visibility = View.GONE
+        prefetchNeighbor()
+    }
+
     private fun originalFailed() {
         loadingCurrent = false
+        original.setOnImageEventListener(null)
+        original.recycle()
+        loading.visibility = View.VISIBLE
         loadOriginal.visibility = View.VISIBLE
         loading.setText(R.string.gallery_preview_failed)
+    }
+
+    private suspend fun showMedium(photo: CameraPhoto) {
+        val started = System.nanoTime()
+        val medium = transfers.preview(photo) ?: return
+        if (photos[index].identity != photo.identity || loadingCurrent) return
+        mediumView.orientation = when (medium.orientation) { 6 -> 90; 8 -> 270; 3 -> 180; else -> 0 }
+        mediumView.visibility = View.VISIBLE
+        mediumView.setOnImageEventListener(object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
+            override fun onImageLoaded() {
+                if (photos[index].identity != photo.identity || loadingCurrent) return
+                mediumLoaded = true
+                quick.visibility = View.GONE; loading.visibility = View.GONE
+                Timber.tag("USB_COMPAT").i("GALLERY_MEDIUM_READY handle=0x%08x elapsedMs=%d",
+                    photo.handle, (System.nanoTime() - started) / 1_000_000)
+                prefetchNeighbor()
+            }
+            override fun onImageLoadError(e: Exception) {
+                mediumView.visibility = View.GONE
+                Timber.tag("USB_COMPAT").w(e, "GALLERY_MEDIUM_DECODE_FAILED handle=0x%08x", photo.handle)
+            }
+        })
+        mediumView.setImage(ImageSource.uri(medium.file.path))
+    }
+
+    private fun prefetchNeighbor() {
+        neighborJob?.cancel()
+        val neighbor = photos.getOrNull(index + direction)?.takeIf { it.documentUri != null } ?: return
+        neighborJob = scope.launch {
+            try { transfers.preview(neighbor, CameraReadPriority.NEIGHBOR_PREVIEW) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Timber.tag("USB_COMPAT").w(e, "PREVIEW_PREFETCH_FAILED") }
+        }
     }
 
     fun close() { dialog.dismiss() }

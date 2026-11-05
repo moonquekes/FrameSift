@@ -8,6 +8,7 @@
             <ImageView android:layout_width="64dp" android:layout_height="64dp" android:src="@drawable/gallery_camera" android:contentDescription="@null"/>
             <TextView android:id="@+id/galleryEmptyTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="@string/gallery_empty_title" android:textColor="@color/gallery_text" android:textSize="18sp"/>
             <TextView android:id="@+id/galleryEmptyBody" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="@string/gallery_empty_body" android:textColor="@color/gallery_muted" android:textSize="12sp" android:gravity="center"/>
+            <TextView android:id="@+id/galleryChooseFolder" android:layout_width="wrap_content" android:layout_height="48dp" android:layout_marginTop="20dp" android:paddingHorizontal="24dp" android:gravity="center" android:text="@string/gallery_choose_folder" android:textColor="@color/gallery_text" android:background="@drawable/gallery_chip" android:clickable="true" android:focusable="true" android:visibility="gone"/>
         </LinearLayout>
     </FrameLayout>
     <FrameLayout android:id="@+id/galleryChromeContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:clipChildren="true" android:background="@color/gallery_background">

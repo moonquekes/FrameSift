@@ -32,8 +32,11 @@ internal class CameraAlbumScreen(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val binding = ScreenCameraAlbumBinding.inflate(activity.layoutInflater, container, true)
-    private val thumbnails = AlbumThumbnails(activity, controller, scope)
-    private val transfers = AlbumTransfers(activity, controller, saveOriginal)
+    private val files = MassStorageFiles(activity.applicationContext, controller)
+    private val thumbnails = AlbumThumbnails(activity, controller, scope, files)
+    private val transfers = AlbumTransfers(activity, controller, saveOriginal, files)
+    private val fileAccess = MassStorageAccess(activity) { onConnectionState(controller.connectionState.value) }
+    private var fileTree: Uri? = null
     private val menus = AlbumMenus(activity)
     private val preferences = AlbumPreferences(activity)
     private var burstSettings = preferences.readBurst()
@@ -62,6 +65,8 @@ internal class CameraAlbumScreen(
     private val chrome = ScrollChrome(binding.galleryChromeContainer, binding.galleryGrid)
 
     init {
+        transfers.onReadProgress = ::onUsbProgress
+        binding.galleryChooseFolder.setOnClickListener { fileAccess.choose() }
         val grid = GridLayoutManager(activity, 3)
         grid.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
             override fun getSpanSize(position: Int): Int = if (adapter.currentList.getOrNull(position) is AlbumTile.Day) 3 else 1
@@ -86,7 +91,10 @@ internal class CameraAlbumScreen(
         }
         binding.galleryDate.setOnClickListener { menus.dates(photos) { date = it; if (it != null) collapsedDays.remove(it); chrome.show(); rebuild(); binding.galleryGrid.scrollToPosition(0) } }
         binding.gallerySort.setOnClickListener { menus.sort(sort) { sort = it; chrome.show(); rebuild(); binding.galleryGrid.scrollToPosition(0) } }
-        binding.galleryRefresh.setOnClickListener { if (connected) loadIndex(force = true) else controller.scanAndConnectIfPossible() }
+        binding.galleryRefresh.setOnClickListener {
+            if (connected) loadIndex(force = true)
+            else if (fileAccess.available()) fileAccess.choose() else controller.scanAndConnectIfPossible()
+        }
         binding.galleryImport.setOnClickListener {
             if (selected.isEmpty()) { selectionMode = !selectionMode; updateSelection() } else importSelected()
         }
@@ -95,8 +103,13 @@ internal class CameraAlbumScreen(
 
     fun onConnectionState(state: UsbPtpConnectionState) {
         val wasConnected = connected
-        connected = state is UsbPtpConnectionState.Connected
-        binding.galleryConnection.setText(when (state) {
+        val previousTree = fileTree
+        fileTree = fileAccess.tree()
+        connected = fileTree != null || state is UsbPtpConnectionState.Connected
+        binding.galleryChooseFolder.visibility = if (!connected && fileAccess.available()) View.VISIBLE else View.GONE
+        if (!connected && fileAccess.available()) binding.galleryEmptyBody.setText(R.string.gallery_folder_hint)
+        binding.galleryConnection.setText(if (fileTree != null) R.string.gallery_file_connected
+            else if (!connected && fileAccess.available()) R.string.gallery_file_permission else when (state) {
             is UsbPtpConnectionState.Connected -> R.string.gallery_connected
             is UsbPtpConnectionState.PermissionRequested -> R.string.gallery_permission
             is UsbPtpConnectionState.Connecting -> R.string.gallery_connecting
@@ -104,7 +117,7 @@ internal class CameraAlbumScreen(
             is UsbPtpConnectionState.Error -> if (state.reason in setOf("permission_denied", "permission_required")) R.string.gallery_permission else R.string.gallery_read_connection_failed
             else -> R.string.gallery_waiting
         })
-        if (connected && !wasConnected) loadIndex()
+        if (connected && (!wasConnected || previousTree != fileTree)) loadIndex()
         if (!connected) {
             indexJob?.cancel()
             preview?.close()
@@ -125,10 +138,10 @@ internal class CameraAlbumScreen(
         binding.galleryEmptyBody.visibility = View.GONE
         indexJob = scope.launch {
             try {
-                photos = AlbumIndexLoader(activity, controller).load(force) { entries, scanned, total, complete ->
+                val update: (List<CameraPhoto>, Int, Int, Boolean) -> Unit = { entries, scanned, total, complete ->
                     if (photos.firstOrNull()?.cacheToken != entries.firstOrNull()?.cacheToken) {
                         imported.clear()
-                        if (entries.isEmpty()) { date = null; collapsedDays.clear() }
+                        date = null; collapsedDays.clear()
                     }
                     photos = entries
                     binding.galleryIndexStatus.text = if (complete) summary() else
@@ -137,6 +150,10 @@ internal class CameraAlbumScreen(
                     binding.galleryIndexProgress.progress = if (total > 0) scanned * 100 / total else 0
                     rebuild()
                 }
+                val tree = fileTree
+                photos = if (tree != null) MassStorageIndex(activity, controller, files).load(tree, force, update)
+                    else AlbumIndexLoader(activity, controller).load(force, update)
+                if (date != null && photos.none { it.day == date }) date = null
                 binding.galleryIndexStatus.text = summary()
                 binding.galleryEmptyTitle.setText(R.string.gallery_no_photos)
                 Timber.tag("USB_COMPAT").i(
@@ -150,7 +167,7 @@ internal class CameraAlbumScreen(
                 binding.galleryIndexStatus.setText(R.string.gallery_index_failed)
                 binding.galleryEmptyTitle.setText(R.string.gallery_index_failed)
                 Timber.tag("USB_COMPAT").e(e, "GALLERY_INDEX_FAILED")
-                controller.disconnect("index_failed")
+                if (fileTree == null) controller.disconnect("index_failed")
             } finally { binding.galleryIndexProgress.visibility = View.GONE }
         }
     }
@@ -287,5 +304,7 @@ internal class CameraAlbumScreen(
         return false
     }
 
-    fun close() { preview?.close(); chrome.close(); scope.cancel(); thumbnails.clearMemory() }
+    fun onResume() { onConnectionState(controller.connectionState.value) }
+
+    fun close() { preview?.close(); chrome.close(); fileAccess.close(); scope.cancel(); thumbnails.clearMemory() }
 }

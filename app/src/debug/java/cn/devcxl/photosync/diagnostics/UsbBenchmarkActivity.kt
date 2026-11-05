@@ -44,6 +44,10 @@ class UsbBenchmarkActivity : ComponentActivity() {
     }
 
     private suspend fun runBenchmark(handle: Int): JSONArray {
+        intent.getStringExtra("fileTree")?.let { tree ->
+            return MountedReadBenchmark.run(this, android.net.Uri.parse(tree),
+                intent.getStringExtra("names").orEmpty(), intent.getStringExtra("buffers").orEmpty())
+        }
         val results = JSONArray()
         val directory = File(externalCacheDir ?: cacheDir, "usb-benchmark").apply { mkdirs() }
         val controller = App.get().usbPtpConnectionController

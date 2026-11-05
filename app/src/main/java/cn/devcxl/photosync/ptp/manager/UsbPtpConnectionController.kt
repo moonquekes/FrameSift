@@ -54,6 +54,11 @@ class UsbPtpConnectionController(
 
     val connectionState: StateFlow<UsbPtpConnectionState> = _connectionState.asStateFlow()
 
+    /** Shares the image priority queue with read-only mounted-camera file operations. */
+    internal suspend fun <T> withFileRead(
+        priority: CameraReadPriority, key: String? = null, read: () -> T
+    ): T = cameraReads.submit(priority, key) { withContext(ioDispatcher) { read() } }
+
     /** Runs a camera read on IO while preventing the connection from closing during the operation. */
     internal suspend fun <T> withConnectedCamera(
         priority: CameraReadPriority = CameraReadPriority.BACKGROUND, key: String? = null,
@@ -225,6 +230,8 @@ class UsbPtpConnectionController(
     }
 
     private suspend fun tryStartConnection(device: UsbDevice, requestPermission: Boolean): Boolean = connectionMutex.withLock {
+        // Mounted mass-storage volumes belong to Android's filesystem driver, not this PTP initiator.
+        if ((0 until device.interfaceCount).none { device.getInterface(it).interfaceClass == 6 }) return@withLock false
         Timber.tag("USB_COMPAT").i(
             "USB_CANDIDATE vid=0x%04x pid=0x%04x permission=%b",
             device.vendorId, device.productId, usbManager.hasPermission(device)

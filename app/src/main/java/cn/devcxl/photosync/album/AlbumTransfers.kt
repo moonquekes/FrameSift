@@ -21,26 +21,33 @@ internal enum class ImportStage { READING, SAVING, VERIFYING }
 internal class AlbumTransfers(
     private val context: Context,
     private val controller: UsbPtpConnectionController,
-    private val saveOriginal: (File, String) -> Uri?
+    private val saveOriginal: (File, String) -> Uri?,
+    private val files: MassStorageFiles = MassStorageFiles(context, controller)
 ) {
     private val directory = File(context.externalCacheDir ?: context.cacheDir, "camera-originals-v2").apply { mkdirs() }
     private val downloading = Mutex()
     private val pinned = ConcurrentHashMap.newKeySet<String>()
     private val metadataDirectory = File(context.cacheDir, "camera-exif-v1").apply { mkdirs() }
+    private val previewDirectory = File(context.cacheDir, "camera-previews-v1").apply { mkdirs() }
+    var onReadProgress: (Int, Long, Long) -> Unit = { _, _, _ -> }
 
     suspend fun download(photo: CameraPhoto): File = downloading.withLock {
         withContext(Dispatchers.IO) {
             val file = cachedFile(photo)
             if (!file.exists() || photo.bytes <= 0 || file.length() != photo.bytes) {
-                controller.withConnectedCamera(CameraReadPriority.CURRENT_ORIGINAL, "original:${photo.identity}") { camera ->
-                    val current = camera.getObjectInfo(photo.handle)
-                    val temporary = File(directory, file.name + ".part")
-                    if (!camera.importFile(photo.handle, temporary.absolutePath, notifyDownloaded = false)) {
-                        throw IOException("GetObject failed")
+                if (photo.documentUri != null) {
+                    files.original(photo, file) { total, done -> onReadProgress(photo.handle, total, done) }
+                } else {
+                    controller.withConnectedCamera(CameraReadPriority.CURRENT_ORIGINAL, "original:${photo.identity}") { camera ->
+                        val current = camera.getObjectInfo(photo.handle)
+                        val temporary = File(directory, file.name + ".part")
+                        if (!camera.importFile(photo.handle, temporary.absolutePath, notifyDownloaded = false)) {
+                            throw IOException("GetObject failed")
+                        }
+                        val expected = current.objectCompressedSize.toLong() and 0xffffffffL
+                        if (temporary.length() != expected) throw IOException("Original byte count mismatch")
+                        if (!temporary.renameTo(file)) throw IOException("Could not commit original cache")
                     }
-                    val expected = current.objectCompressedSize.toLong() and 0xffffffffL
-                    if (temporary.length() != expected) throw IOException("Original byte count mismatch")
-                    if (!temporary.renameTo(file)) throw IOException("Could not commit original cache")
                 }
             }
             file.setLastModified(System.currentTimeMillis())
@@ -58,7 +65,11 @@ internal class AlbumTransfers(
     suspend fun metadata(photo: CameraPhoto): File = withContext(Dispatchers.IO) {
         cached(photo)?.let { return@withContext it }
         val file = File(metadataDirectory, cachedFile(photo).name)
-        if (!file.exists()) controller.withConnectedCamera(CameraReadPriority.CURRENT_PREVIEW, "exif:${photo.identity}") {
+        if (!file.exists() && photo.documentUri != null) {
+            val temporary = File(metadataDirectory, file.name + ".tmp")
+            temporary.writeBytes(files.metadata(photo))
+            if (!temporary.renameTo(file)) throw IOException("Could not commit EXIF cache")
+        } else if (!file.exists()) controller.withConnectedCamera(CameraReadPriority.CURRENT_PREVIEW, "exif:${photo.identity}") {
             val temporary = File(metadataDirectory, file.name + ".tmp")
             temporary.writeBytes(it.getObjectHeader(photo.handle, 64 * 1024))
             if (!temporary.renameTo(file)) throw IOException("Could not commit EXIF cache")
@@ -69,6 +80,19 @@ internal class AlbumTransfers(
         old.filter { it.name != file.name }.forEach { it.delete() }
         file
     }
+
+    suspend fun preview(photo: CameraPhoto, priority: CameraReadPriority = CameraReadPriority.CURRENT_PREVIEW): FilePreview? =
+        withContext(Dispatchers.IO) {
+            if (photo.documentUri == null) return@withContext null
+            val file = File(previewDirectory, cachedFile(photo).name)
+            val result = files.preview(photo, file, priority)
+            var bytes = previewDirectory.listFiles().orEmpty().sumOf { it.length() }
+            for (old in previewDirectory.listFiles().orEmpty().filter { it.extension == "jpg" }.sortedBy { it.lastModified() }) {
+                if (bytes <= 192L * 1024 * 1024) break
+                if (old.name != file.name) { val size = old.length(); if (old.delete()) bytes -= size }
+            }
+            result
+        }
 
     private fun cachedFile(photo: CameraPhoto): File {
         val key = MessageDigest.getInstance("SHA-256").digest(photo.identity.toByteArray())

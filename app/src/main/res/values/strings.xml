@@ -37,4 +37,8 @@
     <string name="dialog_delete_message">确定要删除这张照片吗?此操作不可恢复。</string>
     <string name="dialog_delete_confirm">删除</string>
     <string name="dialog_cancel">取消</string>
+    <string name="gallery_choose_folder">选择相机照片文件夹</string>
+    <string name="gallery_folder_hint">在系统文件夹选择器中打开相机 SD 卡的 DCIM 文件夹。</string>
+    <string name="gallery_file_connected">海量存储 · 已连接</string>
+    <string name="gallery_file_permission">海量存储 · 请选择照片文件夹</string>
 </resources>
