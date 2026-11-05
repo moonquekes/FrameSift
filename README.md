@@ -4,7 +4,7 @@
 
 ## 开始使用
 
-1. 安装本地 `artifacts/framesift-mass-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
+1. 从 [GitHub Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 下载并安装 `framesift-mass-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。本地已有安装包位于 `artifacts/`。
 2. 在相机上关闭「PC Remote」和「智能手机连接」，将「设置 → USB 连接」设为「海量存储器」，然后用数据线连接手机。
 3. 在 PhotoSync 点「选择相机照片文件夹」。在系统文件夹选择器中打开相机 SD 卡上的 `DCIM`，点「使用这个文件夹」并允许。同一存储卷重新连接时会复用授权。
 4. 系统提示照片相关权限时，允许读取原始照片元数据，应用才能保留 JPEG 已有的 EXIF 定位字段。应用获得的 `DCIM` 目录授权为只读。
@@ -19,10 +19,12 @@
 
 ## 分支和文档
 
+两个版本在同一个 [Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 中分别提供 APK。当前为 **debug 预览版**，不是正式签名发行版；两者包名相同，不能作为两个独立应用同时安装。覆盖安装要求签名一致，卸载会清除应用数据。源码提交与 SHA-256 见[发布说明](docs/RELEASES.md)。
+
 | 分支 | 相机连接方式 |
 | --- | --- |
-| `mass` | Android 挂载相机 SD 卡，经 `DCIM` 只读授权读取 JPEG 和内嵌预览。 |
-| `mtp` | 通过 USB MTP/PTP 会话浏览相机对象。 |
+| [`mass`](https://github.com/moonquekes/FrameSift/tree/mass) | Android 挂载相机 SD 卡，经 `DCIM` 只读授权读取 JPEG 和内嵌预览。 |
+| [`mtp`](https://github.com/moonquekes/FrameSift/tree/mtp) | 通过 USB MTP/PTP 会话浏览相机对象。 |
 
 [构建与工具链](docs/BUILD.md) · [真机验证与 APK 校验](docs/VALIDATION.md) · [上游来源与改动](docs/UPSTREAM.md)
 
