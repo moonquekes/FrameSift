@@ -13,8 +13,8 @@
 
 ## 已验证 APK
 
-本地文件 `artifacts/photosync-mtp-debug.apk`，9,728,876 字节。构建源码提交 `b370e2d8f4203dce02e8ab768b91d4b8fe1ad8e5`。该 APK 已实际安装并通过哈希核对。
+本地文件 `artifacts/framesift-mtp-debug.apk`，9,728,876 字节。构建源码提交 `b370e2d8f4203dce02e8ab768b91d4b8fe1ad8e5`。该 APK 已实际安装并通过哈希核对。
 
 ```text
-8f70b337e97e02dcb9c272e0efbb968e2a8ea4a0f173c8cf3adbdc7d64313b17  photosync-mtp-debug.apk
+8f70b337e97e02dcb9c272e0efbb968e2a8ea4a0f173c8cf3adbdc7d64313b17  framesift-mtp-debug.apk
 ```

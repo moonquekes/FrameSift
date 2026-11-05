@@ -1,10 +1,10 @@
-# PhotoSync · MTP 版
+# 拾帧 FrameSift · MTP 版
 
 通过 USB MTP/PTP 在荣耀 Magic7 上浏览 Sony ZV-E10 一代的 JPEG。手机从相机读取照片列表和缩略图，可按拍摄日期挑片，再把选中的原始 JPEG 保存到手机图库。
 
 ## 开始使用
 
-1. 安装本地 `artifacts/photosync-mtp-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
+1. 安装本地 `artifacts/framesift-mtp-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
 2. 在相机上关闭「PC Remote」和「智能手机连接」，将「设置 → USB 连接」设为「MTP」，然后用数据线连接手机。
 3. 打开 PhotoSync。如果 Android 提示允许 PhotoSync 访问相机 USB，选择允许。出现「SONY ZV-E10 · 已连接」后即可浏览照片。
 4. 点按查看大图，长按进入多选。点导入后可查看读取、保存和校验进度。原始 JPEG 保存到手机图库的 `Pictures/PhotoSync`。

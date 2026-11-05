@@ -24,6 +24,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PhotoSync"
+rootProject.name = "FrameSift"
 include ':app'
 include ':libraw'
