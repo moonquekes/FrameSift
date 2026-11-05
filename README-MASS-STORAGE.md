@@ -52,7 +52,7 @@ $env:ANDROID_HOME = Join-Path $toolRoot 'android-sdk'
   :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-编译输出位于 `app/build/outputs/apk/debug/app-debug.apk`。本机另有 [PowerShell 构建脚本](../PhotoSync-validation/build.ps1)，包含当时使用的本地代理配置。需要覆盖手机上这份已验证 APK 时，保留并继续使用同一个调试签名。本机匹配的调试密钥库位于 `%USERPROFILE%\.android\debug.keystore`，应私下保存。
+编译输出位于 `app/build/outputs/apk/debug/app-debug.apk`。在独立仓库 `PhotoSync-MSC` 里构建时，直接在该仓库根目录运行上方命令。[归档的 PowerShell 构建脚本](../PhotoSync-validation/build.ps1)记录了旧工作目录和当时使用的本地代理配置。需要覆盖手机上这份已验证 APK 时，保留并继续使用同一个调试签名。本机匹配的调试密钥库位于 `%USERPROFILE%\.android\debug.keystore`，应私下保存。
 
 ### ADB 安装和日志
 
