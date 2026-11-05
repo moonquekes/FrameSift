@@ -1,31 +1,78 @@
 # 拾帧 FrameSift · MTP 版
 
-通过 USB MTP/PTP 在荣耀 Magic7 上浏览 Sony ZV-E10 一代的 JPEG。手机从相机读取照片列表和缩略图，可按拍摄日期挑片，再把选中的原始 JPEG 保存到手机图库。
+FrameSift 是一款 Android 相机照片浏览与导入工具。通过 USB 连接相机，在手机上按拍摄日期浏览 JPEG、
+筛选照片，再将选中的原始文件导入手机图库，无需先复制整张存储卡。
+
+本分支使用 **USB MTP/PTP**，由应用建立相机会话，读取照片列表、缩略图和原始文件。
+适用范围取决于相机的协议实现和手机的 USB Host 能力，不限定为某一个相机或手机型号。
+
+## 版本选择与下载
+
+从 [GitHub Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 下载与连接方式对应的 APK：
+
+| 源码分支 | 连接方式 | 安装包 |
+| --- | --- | --- |
+| [`mtp`](https://github.com/moonquekes/FrameSift/tree/mtp)（当前） | 应用通过 USB MTP/PTP 会话读取相机照片对象 | `framesift-mtp-debug.apk` |
+| [`mass`](https://github.com/moonquekes/FrameSift/tree/mass) | 手机挂载相机存储，用户授权照片目录 | `framesift-mass-debug.apk` |
+
+当前下载为 **debug 预览版**。两个 APK 使用相同包名，不能作为两个独立应用同时安装。
+覆盖安装要求签名一致；卸载会清除应用数据。构建源码提交、文件大小和 SHA-256 见[发布说明](docs/RELEASES.md)。
+
+## 适用条件
+
+- **手机**：Android 7.0（API 24）及以上，支持 USB Host/OTG，并允许应用访问连接的相机 USB 设备。
+  当前 APK 包含 ARM64 和 ARMv7 原生库。
+- **相机**：提供可用的 USB MTP/PTP 接口，允许应用建立会话、枚举照片、读取缩略图和下载原始对象。
+- **连接线**：使用支持数据传输的线缆及所需的 OTG 转接设备。
+- **照片格式**：当前相机相册仅浏览和导入 JPEG，不提供 RAW 或视频的相册浏览与导入。
+
+代码包含 Canon、Nikon 和 Sony 的协议实现，并提供通用协议路径，但不能据此认定这些品牌的所有型号均兼容。
+相机厂商扩展、USB 模式、缩略图和分段读取行为可能不同；手机系统或其他应用也可能影响相机会话。
+满足连接条件不等于所有功能均已完成兼容性验证。
 
 ## 开始使用
 
-1. 从 [GitHub Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 下载并安装 `framesift-mtp-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。本地已有安装包位于 `artifacts/`。
-2. 在相机上关闭「PC Remote」和「智能手机连接」，将「设置 → USB 连接」设为「MTP」，然后用数据线连接手机。
-3. 打开 PhotoSync。如果 Android 提示允许 PhotoSync 访问相机 USB，选择允许。出现「SONY ZV-E10 · 已连接」后即可浏览照片。
-4. 点按查看大图，长按进入多选。点导入后可查看读取、保存和校验进度。原始 JPEG 保存到手机图库的 `Pictures/PhotoSync`。
+1. 下载并安装 `framesift-mtp-debug.apk`，或按[构建说明](docs/BUILD.md)自行构建。
+2. 按相机说明将 USB 连接方式设为可提供照片访问的 MTP/PTP 模式。如有互斥的遥控或手机连接模式，先关闭这些模式，
+   再用数据线连接手机。不同品牌和型号的菜单名称可能不同；已验证的 Sony ZV-E10 一代使用「MTP」模式。
+3. 打开应用。当前安装包的应用名称仍显示为 **PhotoSync**。
+   如果 Android 提示允许 PhotoSync 访问相机 USB，选择允许，等待应用显示相机已连接并完成照片索引。
+4. 点按照片查看大图，长按进入多选。点导入后可查看读取、保存和完整性校验进度。
+   原始 JPEG 保存到手机图库的 `Pictures/PhotoSync`。
 
-若系统弹窗的请求方是「图库」，且 PhotoSync 已连接，可以取消图库的这次请求。若相机持续显示忙或读取失败，可先拔线再关闭相机，几秒后开机接回。
+若系统弹窗的请求方是其他图库应用，且 PhotoSync 已连接，可以取消其他应用的请求，避免争用相机会话。
+若相机持续显示忙或读取失败，可先拔线再关闭相机，几秒后开机接回。
+
+## 照片如何定位
+
+MTP/PTP 版不依赖手机挂载相机的文件系统，也不需要选择 `DCIM` 文件夹。
+应用通过相机会话枚举存储和照片对象，使用相机返回的对象句柄读取 JPEG，而不是拼接特定品牌的文件路径。
+目录选择和只读目录授权属于 [`mass` 分支](https://github.com/moonquekes/FrameSift/tree/mass)的访问方式。
 
 ## 挑片方式
 
 - 相册只显示 JPEG，按拍摄日期分组，默认最新优先。日期组可以折叠和整组选中。
-- 浏览优先复用已缓存的缩略图。双指放大、点「查看原图」或导入时按需读取完整 JPEG。显示 EXIF 时可以单独读取 JPEG 文件头。
-- 设置分为「连拍分组」和「拍摄参数」。连拍候选默认要求相邻间隔不超过 1 秒、至少 3 张且 DSC 序号连续。大图 EXIF 默认显示焦距、镜头、ISO、光圈和快门。
+- 浏览优先复用已缓存的缩略图。双指放大、点「查看原图」或导入时按需读取完整 JPEG。
+  显示 EXIF 时可以单独读取 JPEG 文件头；实际行为取决于相机的对象读取能力。
+- 大图 EXIF 默认显示焦距、镜头、ISO、光圈和快门，可在「拍摄参数」中调整显示字段。
+- 「连拍分组」使用时间和文件序号启发式规则。默认要求相邻间隔不超过 1 秒、至少 3 张且 `DSC` 序号连续。
+  对其他文件命名方式，可以关闭连续序号要求；分组结果是连拍候选，不是相机提供的确定连拍标记。
+- 新拍的照片可通过刷新或重新连接加入列表。
+- 导入按原文件复制，不重新编码 JPEG，并核对 SHA-256。
 
-## 分支和文档
+## 已验证设备
 
-两个版本在同一个 [Release](https://github.com/moonquekes/FrameSift/releases/tag/v0.1.0-preview.1) 中分别提供 APK。当前为 **debug 预览版**，不是正式签名发行版；两者包名相同，不能作为两个独立应用同时安装。覆盖安装要求签名一致，卸载会清除应用数据。源码提交与 SHA-256 见[发布说明](docs/RELEASES.md)。
+| 相机 | 手机 | 连接方式 |
+| --- | --- | --- |
+| Sony ZV-E10 一代 | 荣耀 Magic7 | USB MTP |
 
-| 分支 | 相机连接方式 |
-| --- | --- |
-| [`mtp`](https://github.com/moonquekes/FrameSift/tree/mtp) | 通过 USB MTP/PTP 会话浏览相机对象。 |
-| [`mass`](https://github.com/moonquekes/FrameSift/tree/mass) | Android 挂载相机 SD 卡，经 `DCIM` 只读授权读取 JPEG 和内嵌预览。 |
+该组合是已完成真机验证的样本，不是限定支持的机型清单。测试时间、覆盖范围与结果见[真机验证记录](docs/VALIDATION.md)。
+实测该相机的部分对象读取存在非零偏移行为差异，当前浏览路径采用缩略图与按需原图，不能直接套用到所有相机型号。
 
-[构建与工具链](docs/BUILD.md) · [真机验证与 APK 校验](docs/VALIDATION.md) · [上游来源与改动](docs/UPSTREAM.md)
+## 文档与来源
+
+[构建与工具链](docs/BUILD.md) · [发布与 APK 校验](docs/RELEASES.md) ·
+[真机验证记录](docs/VALIDATION.md) · [上游来源与改动](docs/UPSTREAM.md)
 
 项目基于 [devcxl/PhotoSync](https://github.com/devcxl/PhotoSync)。
+上游基线缺少覆盖整个项目的顶层许可证；源码与第三方组件的版权和许可声明分别保留，使用和分发前须核实适用授权。
