@@ -1,6 +1,6 @@
 # 上游来源与改动范围
 
-此仓库以 `devcxl/PhotoSync` 的提交 `28ebca9485ff70ef0805fde3f0c38aeaf09b2383` 为基线，Git 历史保留了上游基线和后续改动。 [PhotoSync 上游仓库](https://github.com/devcxl/PhotoSync)
+拾帧（FrameSift）以 `devcxl/PhotoSync` 的提交 `28ebca9485ff70ef0805fde3f0c38aeaf09b2383` 为基线，Git 历史保留了上游基线和后续改动。 [PhotoSync 上游仓库](https://github.com/devcxl/PhotoSync)
 
 | 范围 | 来源与改动 |
 | --- | --- |

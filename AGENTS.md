@@ -1,6 +1,6 @@
-# AGENTS.md - PhotoSync Project Guidelines
+# AGENTS.md - FrameSift Project Guidelines
 
-This file provides coding conventions and operational instructions for AI agents working in the PhotoSync codebase.
+This file provides coding conventions and operational instructions for AI agents working in the FrameSift codebase.
 
 ---
 
@@ -47,7 +47,7 @@ gate without wiring the plugins first.
 ## 2. Project Structure
 
 ```
-PhotoSync/
+FrameSift/
 ├── app/                            # Application module (UI, Room, PTP client)
 │   ├── src/
 │   │   ├── main/java/cn/devcxl/photosync/
@@ -327,7 +327,7 @@ Before completing any change:
 
 ---
 
-## 14. Special Notes for PhotoSync
+## 14. Special Notes for FrameSift
 
 ### USB PTP Connection
 - `UsbPtpConnectionController` manages USB device lifecycle

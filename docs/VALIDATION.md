@@ -13,8 +13,8 @@
 
 ## 已验证 APK
 
-本地文件 `artifacts/photosync-mass-debug.apk`，9,730,724 字节。构建源码提交 `bcef3016cd4a3c3b3b73c2d228d6c8a8b1a9f2ea`。该 APK 已实际安装并通过哈希核对。
+本地文件 `artifacts/framesift-mass-debug.apk`，9,730,724 字节。构建源码提交 `bcef3016cd4a3c3b3b73c2d228d6c8a8b1a9f2ea`。该 APK 已实际安装并通过哈希核对。
 
 ```text
-f67ff59992cc968bc8e040c0ca4cd9efdcbffcb39595dda123c605fc90b0550a  photosync-mass-debug.apk
+f67ff59992cc968bc8e040c0ca4cd9efdcbffcb39595dda123c605fc90b0550a  framesift-mass-debug.apk
 ```

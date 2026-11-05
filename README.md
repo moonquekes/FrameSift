@@ -1,10 +1,10 @@
-# PhotoSync · 海量存储版
+# 拾帧 FrameSift · 海量存储版
 
 把 Sony ZV-E10 一代接到荣耀 Magic7 上，直接浏览 SD 卡里的 JPEG，挑出想要的照片，再把原文件导入手机图库。此分支使用 USB 海量存储（MSC），适合拍完一整天后集中挑片。
 
 ## 开始使用
 
-1. 安装本地 `artifacts/photosync-mass-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
+1. 安装本地 `artifacts/framesift-mass-debug.apk`，或按[构建说明](docs/BUILD.md)生成 APK。
 2. 在相机上关闭「PC Remote」和「智能手机连接」，将「设置 → USB 连接」设为「海量存储器」，然后用数据线连接手机。
 3. 在 PhotoSync 点「选择相机照片文件夹」。在系统文件夹选择器中打开相机 SD 卡上的 `DCIM`，点「使用这个文件夹」并允许。同一存储卷重新连接时会复用授权。
 4. 系统提示照片相关权限时，允许读取原始照片元数据，应用才能保留 JPEG 已有的 EXIF 定位字段。应用获得的 `DCIM` 目录授权为只读。
