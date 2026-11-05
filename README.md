@@ -19,6 +19,8 @@
 
 ---
 
+**本地验证版**适用于 Sony ZV-E10 一代与荣耀 Magic7 的 USB 海量存储挑片。相机设置、安装、Windows 工具链和回退步骤见 [海量存储版 README](./README-MASS-STORAGE.md)。
+
 PhotoSync 是一款 Android 相机伴侣应用，专为摄影师和影像爱好者设计。通过 USB PTP 协议直连相机，无需 Wi-Fi、无需电脑客户端，即可在手机/平板上即拍即传、浏览缩放预览、导出或删除 RAW/JPEG 照片。
 
 ## 功能亮点
